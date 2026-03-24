@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Zebra WiFi Trail</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@700;900&display=swap');
+
+:root {
+  --accent: #00c8ff;
+  --green:  #00ff7a;
+  --yellow: #ffe000;
+  --orange: #ff8800;
+  --red:    #ff2244;
+  --panel:  rgba(6,10,16,0.82);
+  --border: rgba(0,200,255,0.22);
+  --mono:   'Share Tech Mono', monospace;
+  --head:   'Barlow Condensed', sans-serif;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html, body { width:100%; height:100%; overflow:hidden; background:#06080c; }
+
+/* ── MAP — full screen, always behind ── */
+#map {
+  position: fixed; inset: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+}
+.leaflet-container       { background: #06080c !important; }
+.leaflet-control-zoom    { margin: 0 !important; }
+.leaflet-bottom.leaflet-right { bottom: 6px !important; right: 6px !important; }
+
+/* ── TOP BAR — slim, mostly transparent ── */
+#topbar {
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 600;
+  height: 42px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(14px);
+  display: flex; align-items: center;
+  padding: 0 10px;
+  gap: 8px;
+}
+.tb-logo {
+  width: 22px; height: 22px; flex-shrink: 0;
+  background: var(--accent);
+  clip-path: polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--head); font-weight:900; font-size:10px; color:#000;
+}
+.tb-title { font-family:var(--head); font-weight:900; font-size:14px; letter-spacing:3px; color:#fff; text-transform:uppercase; flex-shrink:0; }
+
+/* RSSI pill — the always-visible key metric */
+#rssi-pill {
+  display: flex; align-items: center; gap: 5px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 3px 10px;
+  margin-left: auto;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+#rssi-pill-val { font-family:var(--mono); font-size:15px; line-height:1; }
+#rssi-pill-unit { font-family:var(--mono); font-size:9px; color:rgba(180,200,220,.5); }
+.pill-bars { display:flex; align-items:flex-end; gap:2px; height:14px; }
+.pb { width:3px; background:rgba(255,255,255,.15); border-radius:1px 1px 0 0; }
+.pb:nth-child(1){height:25%}.pb:nth-child(2){height:45%}.pb:nth-child(3){height:65%}.pb:nth-child(4){height:82%}.pb:nth-child(5){height:100%}
+.pb.on { background: var(--green); }
+.pb.on.y { background: var(--yellow); }
+.pb.on.o { background: var(--orange); }
+.pb.on.r { background: var(--red); }
+
+.pulse { width:6px; height:6px; border-radius:50%; background:var(--green); flex-shrink:0; animation: blink 1.1s infinite ease-in-out; }
+@keyframes blink { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.2;transform:scale(.5)} }
+
+/* menu button */
+#menu-btn {
+  width:32px; height:32px; flex-shrink:0;
+  background: rgba(0,0,0,.4); border:1px solid var(--border);
+  border-radius:4px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:4px;
+  cursor:pointer; margin-left:6px;
+}
+.mb-line { width:16px; height:2px; background:rgba(180,200,220,.7); border-radius:1px; }
+
+/* ── DETAIL DRAWER — slides up from bottom ── */
+#drawer {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  z-index: 700;
+  background: rgba(6,10,16,0.96);
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(16px);
+  transform: translateY(100%);
+  transition: transform .28s cubic-bezier(.4,0,.2,1);
+  max-height: 70vh;
+  display: flex; flex-direction: column;
+}
+#drawer.open { transform: translateY(0); }
+
+.drawer-handle {
+  width: 36px; height: 4px; border-radius:2px;
+  background: rgba(180,200,220,.25);
+  margin: 8px auto 6px;
+  flex-shrink:0;
+}
+.drawer-tabs {
+  display: flex; border-bottom: 1px solid rgba(255,255,255,.06);
+  flex-shrink: 0;
+}
+.dtab {
+  flex:1; padding: 8px 4px;
+  font-family:var(--mono); font-size:9px; letter-spacing:1.5px;
+  text-transform:uppercase; text-align:center;
+  color: rgba(180,200,220,.4); cursor:pointer;
+  border-bottom: 2px solid transparent;
+  transition: all .15s;
+}
+.dtab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.drawer-body { overflow-y:auto; flex:1; padding: 12px 14px 20px; }
+.drawer-body::-webkit-scrollbar { width:3px; }
+.drawer-body::-webkit-scrollbar-thumb { background:rgba(0,200,255,.2); }
+
+/* Tab panes */
+.tab-pane { display:none; }
+.tab-pane.active { display:block; }
+
+/* Signal tab */
+.sig-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+.sig-cell { background:rgba(255,255,255,.04); border-radius:3px; padding:8px; }
+.sc-val { font-family:var(--mono); font-size:20px; color:var(--accent); line-height:1; }
+.sc-key { font-family:var(--mono); font-size:8px; color:rgba(180,200,220,.4); letter-spacing:1px; text-transform:uppercase; margin-top:2px; }
+
+/* AP tab */
+.ap-block { margin-bottom:10px; }
+.ap-blabel { font-family:var(--mono); font-size:8px; color:rgba(180,200,220,.35); letter-spacing:2px; text-transform:uppercase; margin-bottom:4px; }
+.ap-id   { font-family:var(--mono); font-size:15px; color:#fff; }
+.ap-mac  { font-family:var(--mono); font-size:10px; color:rgba(180,200,220,.45); margin-top:2px; }
+.ap-ch   { font-family:var(--mono); font-size:10px; color:var(--yellow); margin-top:2px; }
+.ho-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px; }
+.ho-cell { text-align:center; background:rgba(255,255,255,.04); border-radius:3px; padding:7px; }
+.hc-val  { font-family:var(--mono); font-size:18px; color:var(--accent); }
+.hc-val.fail { color:var(--red); }
+.hc-key  { font-family:var(--mono); font-size:8px; color:rgba(180,200,220,.4); letter-spacing:1px; text-transform:uppercase; margin-top:2px; }
+
+/* Log tab */
+.log-row { display:grid; grid-template-columns:58px 58px 1fr; gap:6px; padding:5px 0; border-bottom:1px solid rgba(255,255,255,.04); font-family:var(--mono); font-size:9.5px; animation:fadeIn .2s ease; }
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.l-ts   { color:rgba(180,200,220,.3); }
+.l-type { text-transform:uppercase; font-weight:600; }
+.l-type.CONN    { color:var(--green); }
+.l-type.HANDOFF { color:var(--yellow); }
+.l-type.FAILHO  { color:var(--red); }
+.l-type.WARN    { color:var(--orange); }
+.l-type.DROP    { color:var(--red); }
+.l-type.INFO    { color:var(--accent); }
+.l-type.GPS     { color:#a855f7; }
+.l-msg  { color:rgba(180,200,220,.7); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* Legend tab */
+.leg-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; font-family:var(--mono); font-size:11px; color:rgba(180,200,220,.8); }
+.leg-sw  { width:28px; height:6px; border-radius:3px; flex-shrink:0; }
+.leg-x   { width:18px; height:18px; display:flex; align-items:center; justify-content:center; font-size:14px; color:var(--red); border:1.5px solid var(--red); border-radius:50%; flex-shrink:0; font-weight:900; }
+
+/* ── SIM CONTROLS — floating left, compact ── */
+#sim-fab {
+  position: fixed; left: 10px; bottom: 16px;
+  z-index: 600;
+  display: flex; flex-direction: column; gap: 6px;
+  align-items: flex-start;
+}
+#sim-fab.log-open { bottom: calc(70vh + 10px); }
+
+.fab-row { display:flex; gap:5px; }
+
+.fab {
+  font-family:var(--mono); font-size:9px; letter-spacing:1px; text-transform:uppercase;
+  padding: 5px 9px; border-radius:3px; border:1px solid;
+  cursor:pointer; background: rgba(6,10,16,.85);
+  backdrop-filter: blur(8px);
+  transition: transform .15s, opacity .15s;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.fab:active { transform:scale(.95); opacity:.8; }
+.fb-blue   { color:var(--accent);  border-color:rgba(0,200,255,.35); }
+.fb-red    { color:var(--red);     border-color:rgba(255,34,68,.35); }
+.fb-yellow { color:var(--yellow);  border-color:rgba(255,224,0,.35); }
+.fb-green  { color:var(--green);   border-color:rgba(0,255,122,.35); }
+.fb-orange { color:var(--orange);  border-color:rgba(255,136,0,.35); }
+
+/* GPS indicator — top right under topbar */
+#gps-badge {
+  position: fixed; top: 48px; right: 8px;
+  z-index: 590;
+  font-family: var(--mono); font-size: 9px;
+  color: rgba(180,200,220,.5);
+  background: rgba(6,10,16,.75);
+  border: 1px solid rgba(0,200,255,.15);
+  border-radius: 3px; padding: 3px 7px;
+  backdrop-filter: blur(6px);
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+
+/* ── ALERT BANNER ── */
+#alert-banner {
+  display:none;
+  position:fixed; top:50px; left:50%; transform:translateX(-50%);
+  z-index:800;
+  background:var(--red); color:#fff;
+  font-family:var(--head); font-weight:700; font-size:12px;
+  letter-spacing:2px; text-transform:uppercase;
+  padding:6px 18px; border-radius:3px;
+  animation: flashB .7s infinite ease-in-out;
+  white-space:nowrap; pointer-events:none;
+}
+@keyframes flashB{0%,100%{opacity:1}50%{opacity:.5}}
+
+#drop-overlay {
+  display:none; position:fixed; inset:0; z-index:200;
+  background:rgba(255,0,51,.06); pointer-events:none;
+  animation:flashOv .5s infinite ease-in-out;
+}
+@keyframes flashOv{0%,100%{opacity:1}50%{opacity:0}}
+
+/* Leaflet popup */
+.leaflet-popup-content-wrapper {
+  background:rgba(6,10,16,.96) !important;
+  border:1px solid rgba(0,200,255,.3) !important;
+  border-radius:4px !important; color:#c8d8e8 !important;
+  font-family:var(--mono) !important; font-size:11px !important;
+  backdrop-filter:blur(10px); max-width:220px !important;
+}
+.leaflet-popup-tip { background:rgba(6,10,16,.96) !important; }
+.leaflet-popup-close-button { color:#c8d8e8 !important; top:4px !important; right:6px !important; }
+</style>
+</head>
+<body>
+
+<div id="drop-overlay"></div>
+<div id="alert-banner">&#9888; SIGNAL DROPPED</div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="tb-logo">Z</div>
+  <div class="tb-title">WiFi Trail</div>
+  <div id="rssi-pill" onclick="openDrawer('signal')">
+    <div class="pill-bars">
+      <div class="pb" id="pb1"></div><div class="pb" id="pb2"></div>
+      <div class="pb" id="pb3"></div><div class="pb" id="pb4"></div>
+      <div class="pb" id="pb5"></div>
+    </div>
+    <div id="rssi-pill-val" style="color:var(--green)">-65</div>
+    <div id="rssi-pill-unit">dBm</div>
+    <div class="pulse" id="pulse-dot"></div>
+  </div>
+  <div id="locate-btn" onclick="locateMe()" title="Re-center on my location" style="width:32px;height:32px;flex-shrink:0;background:rgba(0,0,0,.4);border:1px solid var(--border);border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;margin-left:2px;">&#x25CE;</div>
+  <div id="menu-btn" onclick="openDrawer('legend')">
+    <div class="mb-line"></div><div class="mb-line"></div><div class="mb-line"></div>
+  </div>
+</div>
+
+<!-- GPS BADGE -->
+<div id="gps-badge">&#128507; Acquiring GPS…</div>
+
+<!-- SIM CONTROLS -->
+<div id="sim-fab">
+  <div class="fab-row">
+    <button class="fab fb-yellow" onclick="simWalk()" id="walk-btn">&#9655; Walk</button>
+    <button class="fab fb-red"    onclick="stopWalk()" id="stop-btn" style="display:none">&#9646;&#9646; Stop</button>
+    <button class="fab fb-blue"   onclick="clearTrail()">&#8635; Clear</button>
+  </div>
+  <div class="fab-row">
+    <button class="fab fb-blue"   onclick="simHandoff()">&#8658; Handoff</button>
+    <button class="fab fb-red"    onclick="simFailedHandoff()">&#10007; Fail</button>
+  </div>
+  <div class="fab-row">
+    <button class="fab fb-orange" onclick="simWeak()">&#9888; Weak</button>
+    <button class="fab fb-green"  onclick="simRecover()">&#10003; Recover</button>
+  </div>
+</div>
+
+<!-- DETAIL DRAWER -->
+<div id="drawer">
+  <div class="drawer-handle" onclick="closeDrawer()"></div>
+  <div class="drawer-tabs">
+    <div class="dtab active" id="tab-signal"  onclick="switchTab('signal')">Signal</div>
+    <div class="dtab"        id="tab-ap"      onclick="switchTab('ap')">AP / Handoff</div>
+    <div class="dtab"        id="tab-log"     onclick="switchTab('log')">Log</div>
+    <div class="dtab"        id="tab-legend"  onclick="switchTab('legend')">Legend</div>
+  </div>
+  <div class="drawer-body">
+
+    <!-- SIGNAL -->
+    <div class="tab-pane active" id="pane-signal">
+      <div class="sig-row">
+        <div class="sig-cell"><div class="sc-val" id="d-rssi">-65</div><div class="sc-key">RSSI (dBm)</div></div>
+        <div class="sig-cell"><div class="sc-val" id="d-snr">28</div><div class="sc-key">SNR (dB)</div></div>
+        <div class="sig-cell"><div class="sc-val" id="d-noise">-93</div><div class="sc-key">Noise Floor</div></div>
+        <div class="sig-cell"><div class="sc-val" id="d-lat">4</div><div class="sc-key">Latency ms</div></div>
+        <div class="sig-cell"><div class="sc-val" id="d-tx">300</div><div class="sc-key">TX Mbps</div></div>
+        <div class="sig-cell"><div class="sc-val" id="d-rx">270</div><div class="sc-key">RX Mbps</div></div>
+      </div>
+      <div class="sig-cell" style="text-align:center;margin-top:4px;">
+        <div class="sc-val" id="d-cov" style="font-size:16px">Good</div>
+        <div class="sc-key">Coverage Quality</div>
+      </div>
+    </div>
+
+    <!-- AP -->
+    <div class="tab-pane" id="pane-ap">
+      <div class="ap-block">
+        <div class="ap-blabel">Current Access Point</div>
+        <div class="ap-id"  id="d-apid">AP-ZONE-07</div>
+        <div class="ap-mac" id="d-apmac">00:1A:2B:3C:4D:05</div>
+        <div class="ap-ch"  id="d-apch">CH 36 · 5GHz · WPA3-ENT</div>
+      </div>
+      <div class="ho-grid">
+        <div class="ho-cell"><div class="hc-val" id="d-ho">0</div><div class="hc-key">Handoffs</div></div>
+        <div class="ho-cell"><div class="hc-val fail" id="d-fail">0</div><div class="hc-key">Failed</div></div>
+        <div class="ho-cell"><div class="hc-val" id="d-homs">—</div><div class="hc-key">Last ms</div></div>
+      </div>
+    </div>
+
+    <!-- LOG -->
+    <div class="tab-pane" id="pane-log">
+      <div id="log-inner"></div>
+    </div>
+
+    <!-- LEGEND -->
+    <div class="tab-pane" id="pane-legend">
+      <div style="font-family:var(--mono);font-size:9px;color:rgba(180,200,220,.4);letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">Trail Color = Signal Strength</div>
+      <div class="leg-row"><div class="leg-sw" style="background:var(--green)"></div>Excellent &gt; -60 dBm</div>
+      <div class="leg-row"><div class="leg-sw" style="background:var(--yellow)"></div>Good  -60 to -70 dBm</div>
+      <div class="leg-row"><div class="leg-sw" style="background:var(--orange)"></div>Fair  -70 to -80 dBm</div>
+      <div class="leg-row"><div class="leg-sw" style="background:var(--red)"></div>Poor &lt; -80 dBm</div>
+      <div class="leg-row" style="margin-top:6px;"><div class="leg-x">&#10007;</div>Failed AP handoff — tap marker for details</div>
+      <div style="margin-top:14px;font-family:var(--mono);font-size:9px;color:rgba(180,200,220,.4);letter-spacing:1px;line-height:1.6;">
+        Tap any trail segment or &#10007; marker on the map for full details including RSSI, timestamp, and coordinates.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+// ── STATE ──────────────────────────────────────────────
+const ST = {
+  rssi:-65, snr:28, noise:-93, tx:300, rx:270, lat:4, latMax:14,
+  curAP:{ id:'AP-ZONE-07', mac:'00:1A:2B:3C:4D:05', ch:'CH 36 · 5GHz · WPA3-ENT' },
+  hoCount:0, hoFail:0, hoLastMs:null,
+  dropped:false,
+  trailPoints:[], trailLayers:[], failMarkers:[],
+  deviceLat:40.8592367, deviceLng:-86.8762543,
+  gpsWatchId:null, walkInterval:null, walkAngle:Math.random()*360,
+  logCount:0
+};
+
+const AP_POOL = [
+  {id:'AP-ZONE-01',mac:'00:1A:2B:AA:01:01',ch:'CH 1 · 2.4GHz · WPA3-ENT'},
+  {id:'AP-ZONE-03',mac:'00:1A:2B:AA:01:03',ch:'CH 6 · 2.4GHz · WPA3-ENT'},
+  {id:'AP-ZONE-05',mac:'00:1A:2B:AA:01:05',ch:'CH 11 · 2.4GHz · WPA3-ENT'},
+  {id:'AP-ZONE-07',mac:'00:1A:2B:AA:01:07',ch:'CH 36 · 5GHz · WPA3-ENT'},
+  {id:'AP-ZONE-09',mac:'00:1A:2B:AA:01:09',ch:'CH 40 · 5GHz · WPA3-ENT'},
+  {id:'AP-ZONE-11',mac:'00:1A:2B:AA:01:11',ch:'CH 44 · 5GHz · WPA3-ENT'},
+  {id:'AP-ZONE-13',mac:'00:1A:2B:AA:01:13',ch:'CH 149 · 5GHz · WPA3-ENT'},
+];
+
+// ── MAP ────────────────────────────────────────────────
+const map = L.map('map',{ center:[ST.deviceLat,ST.deviceLng], zoom:18, zoomControl:true });
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+  maxZoom:21,
+  attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
+  subdomains:'abcd'
+}).addTo(map);
+
+// Device marker
+function makeDevIcon(color){
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:16px;height:16px;border-radius:50%;background:${color};border:2.5px solid #fff;box-shadow:0 0 8px ${color}88;"></div>`,
+    iconSize:[16,16], iconAnchor:[8,8]
+  });
+}
+const devMarker = L.marker([ST.deviceLat,ST.deviceLng],{icon:makeDevIcon('#ffe000'),zIndexOffset:1000}).addTo(map);
+
+// ── HELPERS ────────────────────────────────────────────
+function rssiColor(r){ return r>=-60?'#00ff7a':r>=-70?'#ffe000':r>=-80?'#ff8800':'#ff2244'; }
+function rssiClass(r){ return r>=-60?'green':r>=-70?'yellow':r>=-80?'orange':'red'; }
+function rssiBarCls(r){ return r>=-60?'on':r>=-70?'on y':r>=-80?'on o':'on r'; }
+function rssiLevel(r){ return r>=-60?5:r>=-67?4:r>=-74?3:r>=-80?2:1; }
+function rssiCov(r){ return r>=-60?'Excellent':r>=-70?'Good':r>=-80?'Fair':'Poor'; }
+
+// ── TRAIL ──────────────────────────────────────────────
+function addTrailPoint(lat,lng,rssi){
+  const pt={lat,lng,rssi,ts:Date.now()};
+  ST.trailPoints.push(pt);
+  if(ST.trailPoints.length>=2){
+    const prev=ST.trailPoints[ST.trailPoints.length-2];
+    const color=rssiColor(rssi);
+    const seg=L.polyline([[prev.lat,prev.lng],[lat,lng]],{
+      color,weight:6,opacity:0.88,lineCap:'round',lineJoin:'round'
+    }).addTo(map);
+    const ts=new Date(pt.ts).toTimeString().slice(0,8);
+    seg.bindPopup(`<b style="color:${color}">${rssiCov(rssi)}</b><br>RSSI: <b>${rssi} dBm</b><br>${ts}<br><span style="opacity:.5">${lat.toFixed(5)}, ${lng.toFixed(5)}</span>`);
+    ST.trailLayers.push(seg);
+  }
+  devMarker.setLatLng([lat,lng]);
+  devMarker.setIcon(makeDevIcon(rssiColor(rssi)));
+}
+
+function addFailMarker(lat,lng,rssi,reason){
+  const icon=L.divIcon({
+    className:'',
+    html:`<div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#ff2244;background:rgba(6,10,16,.9);border:2px solid #ff2244;border-radius:50%;box-shadow:0 0 10px #ff224466;cursor:pointer;">✕</div>`,
+    iconSize:[20,20],iconAnchor:[10,10]
+  });
+  const m=L.marker([lat,lng],{icon,zIndexOffset:900}).addTo(map);
+  const ts=new Date().toTimeString().slice(0,8);
+  m.bindPopup(`<b style="color:#ff2244">✕ FAILED HANDOFF</b><br>${ts}<br>RSSI: <b>${rssi} dBm</b><br>${reason}<br><span style="opacity:.5">${lat.toFixed(5)}, ${lng.toFixed(5)}</span>`);
+  m.openPopup();
+  ST.failMarkers.push(m);
+}
+
+function clearTrail(){
+  ST.trailLayers.forEach(l=>map.removeLayer(l));
+  ST.trailLayers=[];
+  ST.failMarkers.forEach(m=>map.removeLayer(m));
+  ST.failMarkers=[];
+  ST.trailPoints=[];
+  addLog('INFO','Trail cleared');
+}
+
+// ── UI UPDATE ──────────────────────────────────────────
+function updateUI(){
+  const r=ST.rssi, c=rssiColor(r), cls=rssiClass(r), lvl=rssiLevel(r), bc=rssiBarCls(r);
+  // Pill
+  document.getElementById('rssi-pill-val').textContent=r;
+  document.getElementById('rssi-pill-val').style.color=c;
+  for(let i=1;i<=5;i++){
+    document.getElementById('pb'+i).className='pb'+(i<=lvl?' '+bc:'');
+  }
+  // Drawer signal pane
+  document.getElementById('d-rssi').textContent=r;
+  document.getElementById('d-rssi').style.color=c;
+  document.getElementById('d-snr').textContent=ST.snr;
+  document.getElementById('d-noise').textContent=ST.noise;
+  document.getElementById('d-lat').textContent=ST.lat;
+  document.getElementById('d-tx').textContent=ST.tx;
+  document.getElementById('d-rx').textContent=ST.rx;
+  document.getElementById('d-cov').textContent=rssiCov(r);
+  document.getElementById('d-cov').style.color=c;
+  // AP pane
+  document.getElementById('d-apid').textContent=ST.curAP.id;
+  document.getElementById('d-apmac').textContent=ST.curAP.mac;
+  document.getElementById('d-apch').textContent=ST.curAP.ch;
+  document.getElementById('d-ho').textContent=ST.hoCount;
+  document.getElementById('d-fail').textContent=ST.hoFail;
+  document.getElementById('d-homs').textContent=ST.hoLastMs!==null?ST.hoLastMs+'ms':'—';
+}
+
+// ── LOG ────────────────────────────────────────────────
+function addLog(type,msg){
+  const inn=document.getElementById('log-inner');
+  const ts=new Date().toTimeString().slice(0,8);
+  const el=document.createElement('div');
+  el.className='log-row';
+  el.innerHTML=`<span class="l-ts">${ts}</span><span class="l-type ${type}">${type}</span><span class="l-msg">${msg}</span>`;
+  inn.insertBefore(el,inn.firstChild);
+  while(inn.children.length>150)inn.removeChild(inn.lastChild);
+  ST.logCount++;
+}
+
+// ── DRAWER ─────────────────────────────────────────────
+function openDrawer(tab){
+  document.getElementById('drawer').classList.add('open');
+  if(tab) switchTab(tab);
+}
+function closeDrawer(){
+  document.getElementById('drawer').classList.remove('open');
+}
+function switchTab(id){
+  document.querySelectorAll('.dtab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  document.getElementById('pane-'+id).classList.add('active');
+  document.getElementById('drawer').classList.add('open');
+}
+// Swipe down to close drawer
+let touchStartY=0;
+document.getElementById('drawer').addEventListener('touchstart',e=>{ touchStartY=e.touches[0].clientY; });
+document.getElementById('drawer').addEventListener('touchend',e=>{
+  if(e.changedTouches[0].clientY - touchStartY > 60) closeDrawer();
+});
+// Tap map to close drawer
+map.on('click',closeDrawer);
+
+// ── DROP ALERT ──────────────────────────────────────────
+function showDrop(v){
+  document.getElementById('alert-banner').style.display=v?'block':'none';
+  document.getElementById('drop-overlay').style.display=v?'block':'none';
+  ST.dropped=v;
+  if(v) document.getElementById('pulse-dot').style.background='var(--red)';
+  else  document.getElementById('pulse-dot').style.background='var(--green)';
+}
+
+// ── GPS ────────────────────────────────────────────────
+// Two-phase: fast coarse fix first, then high-accuracy watch.
+// Filters out junk readings above accuracy threshold.
+// Auto-retries on timeout. Shows accuracy ring on map.
+
+const GPS = {
+  ACCURACY_THRESHOLD: 25,   // ignore fixes worse than this (meters)
+  TRAIL_MIN_DIST: 3,         // only record point if moved >= 3m
+  watchId: null,
+  retryTimer: null,
+  retryCount: 0,
+  MAX_RETRIES: 5,
+  firstFix: false,
+  accuracyCircle: null,
+  lastRecordedLat: null,
+  lastRecordedLng: null,
+};
+
+function gpsBadge(txt, color){
+  const el = document.getElementById('gps-badge');
+  el.textContent = txt;
+  el.style.color = color || 'rgba(180,200,220,.5)';
+}
+
+function haversineMeters(lat1,lng1,lat2,lng2){
+  const R=6371000, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function onGPSSuccess(pos){
+  GPS.retryCount = 0;
+  clearTimeout(GPS.retryTimer);
+  const{latitude:lat, longitude:lng, accuracy:acc, heading, speed} = pos.coords;
+
+  // Update accuracy ring on map
+  if(GPS.accuracyCircle) map.removeLayer(GPS.accuracyCircle);
+  GPS.accuracyCircle = L.circle([lat,lng],{
+    radius: acc,
+    color: acc<=GPS.ACCURACY_THRESHOLD ? '#00ff7a' : '#ff8800',
+    fillColor: acc<=GPS.ACCURACY_THRESHOLD ? '#00ff7a' : '#ff8800',
+    fillOpacity: 0.06, weight: 1, opacity: 0.4
+  }).addTo(map);
+
+  // Badge color reflects quality
+  const qual = acc<=10?'#00ff7a': acc<=25?'#ffe000': acc<=50?'#ff8800':'#ff2244';
+  const qualTxt = acc<=10?'Excellent': acc<=25?'Good': acc<=50?'Fair':'Poor';
+  gpsBadge(`GPS ±${Math.round(acc)}m · ${qualTxt}`, qual);
+
+  // First fix — always center map regardless of accuracy
+  if(!GPS.firstFix){
+    GPS.firstFix = true;
+    ST.deviceLat = lat; ST.deviceLng = lng;
+    map.setView([lat,lng], 18, {animate:true});
+    devMarker.setLatLng([lat,lng]);
+    GPS.lastRecordedLat = lat; GPS.lastRecordedLng = lng;
+    addLog('GPS', `First fix: ±${Math.round(acc)}m · ${qualTxt} · centering map`);
+    addTrailPoint(lat, lng, ST.rssi);
+    return;
+  }
+
+  // Filter noisy/inaccurate fixes for trail recording
+  if(acc > GPS.ACCURACY_THRESHOLD){
+    addLog('GPS', `Skipped fix ±${Math.round(acc)}m — below accuracy threshold`);
+    return;
+  }
+
+  ST.deviceLat = lat; ST.deviceLng = lng;
+
+  // Only add trail point if moved far enough (avoids GPS drift noise)
+  const dist = GPS.lastRecordedLat !== null
+    ? haversineMeters(GPS.lastRecordedLat, GPS.lastRecordedLng, lat, lng)
+    : 999;
+
+  if(dist >= GPS.TRAIL_MIN_DIST){
+    addTrailPoint(lat, lng, ST.rssi);
+    GPS.lastRecordedLat = lat; GPS.lastRecordedLng = lng;
+    const hdg = heading!=null&&!isNaN(heading) ? ` hdg:${Math.round(heading)}°` : '';
+    const spd = speed!=null&&!isNaN(speed)     ? ` ${(speed*3.6).toFixed(1)}km/h` : '';
+    addLog('GPS', `+${Math.round(dist)}m · ±${Math.round(acc)}m${hdg}${spd}`);
+  }
+
+  // Keep device marker moving even if trail not recorded
+  devMarker.setLatLng([lat,lng]);
+  map.panTo([lat,lng], {animate:true, duration:0.4});
+}
+
+function onGPSError(err){
+  const msgs = {1:'Permission denied',2:'Position unavailable',3:'Timeout'};
+  const msg = msgs[err.code] || 'Unknown error';
+  gpsBadge(`⚠ GPS: ${msg}`, '#ff8800');
+  addLog('WARN', `GPS error (${err.code}): ${msg}`);
+
+  if(err.code === 3 && GPS.retryCount < GPS.MAX_RETRIES){
+    // Timeout — retry with relaxed settings
+    GPS.retryCount++;
+    addLog('INFO', `GPS retry ${GPS.retryCount}/${GPS.MAX_RETRIES} — relaxing accuracy…`);
+    if(GPS.watchId){ navigator.geolocation.clearWatch(GPS.watchId); GPS.watchId=null; }
+    GPS.retryTimer = setTimeout(()=> startGPSWatch(GPS.retryCount > 2), 2000);
+  } else if(err.code === 1){
+    gpsBadge('⚠ Location permission denied', '#ff2244');
+    addLog('WARN','Grant location permission in browser settings, then reload');
+  }
+}
+
+function startGPSWatch(relaxed){
+  if(!navigator.geolocation){
+    gpsBadge('⚠ GPS N/A', '#ff2244');
+    addLog('WARN','Geolocation API unavailable — use Simulate Walk');
+    return;
+  }
+  const opts = relaxed
+    ? {enableHighAccuracy:false, maximumAge:5000,  timeout:15000}  // relaxed fallback
+    : {enableHighAccuracy:true,  maximumAge:1000,  timeout:12000}; // preferred high-accuracy
+
+  addLog('GPS', relaxed ? 'Starting low-accuracy fallback watch…' : 'Starting high-accuracy GPS watch…');
+  gpsBadge('⏳ Acquiring GPS…', '#ffe000');
+
+  // Phase 1: get a quick coarse fix while high-accuracy warms up
+  if(!relaxed && !GPS.firstFix){
+    navigator.geolocation.getCurrentPosition(
+      pos => { if(!GPS.firstFix) onGPSSuccess(pos); },
+      ()  => {},
+      {enableHighAccuracy:false, timeout:6000, maximumAge:10000}
+    );
+  }
+
+  GPS.watchId = navigator.geolocation.watchPosition(onGPSSuccess, onGPSError, opts);
+}
+
+function startGPS(){
+  startGPSWatch(false);
+}
+
+// "Locate me" button — re-center map on current position
+function locateMe(){
+  if(ST.deviceLat && GPS.firstFix){
+    map.setView([ST.deviceLat, ST.deviceLng], 18, {animate:true});
+    addLog('INFO','Re-centered map on current position');
+  } else {
+    gpsBadge('⏳ Still acquiring…', '#ffe000');
+    addLog('WARN','GPS not yet fixed — still acquiring');
+  }
+}
+
+// ── SIMULATE WALK ──────────────────────────────────────
+function simWalk(){
+  if(ST.walkInterval)return;
+  document.getElementById('walk-btn').style.display='none';
+  document.getElementById('stop-btn').style.display='block';
+  addLog('INFO','Simulated walk started');
+  let step=0;
+  ST.walkInterval=setInterval(()=>{
+    ST.walkAngle+=(Math.random()-.5)*35;
+    const d=(2+Math.random()*3)/111320;
+    ST.deviceLat+=d*Math.cos(ST.walkAngle*Math.PI/180);
+    ST.deviceLng+=d*Math.sin(ST.walkAngle*Math.PI/180)/Math.cos(ST.deviceLat*Math.PI/180);
+    ST.rssi=Math.max(-95,Math.min(-40,ST.rssi+(Math.random()-.5)*4));
+    ST.snr=Math.max(1,Math.min(45,Math.round(ST.snr+(Math.random()-.5)*2)));
+    addTrailPoint(ST.deviceLat,ST.deviceLng,ST.rssi);
+    map.panTo([ST.deviceLat,ST.deviceLng],{animate:true,duration:.5});
+    updateUI(); step++;
+    if(step%18===0){ Math.random()<.2?simFailedHandoff():simHandoff(); }
+    if(ST.rssi<-80&&step%6===0) addLog('WARN',`Weak: ${ST.rssi}dBm — move closer to AP`);
+  },1200);
+}
+function stopWalk(){
+  clearInterval(ST.walkInterval); ST.walkInterval=null;
+  document.getElementById('walk-btn').style.display='block';
+  document.getElementById('stop-btn').style.display='none';
+  addLog('INFO','Walk stopped');
+}
+
+// ── SIMULATIONS ────────────────────────────────────────
+function simHandoff(){
+  const prev=ST.curAP;
+  const next=AP_POOL.filter(a=>a.id!==ST.curAP.id)[Math.floor(Math.random()*(AP_POOL.length-1))];
+  const pr=ST.rssi, ms=8+Math.floor(Math.random()*35);
+  ST.curAP=next; ST.hoCount++; ST.hoLastMs=ms;
+  ST.rssi=Math.max(-90,Math.min(-45,ST.rssi+(Math.random()-.35)*15));
+  addLog('HANDOFF',`${prev.id}→${next.id} RSSI ${pr}→${ST.rssi}dBm ${ms}ms`);
+  updateUI();
+}
+function simFailedHandoff(){
+  const reasons=['Auth timeout (PMK)','Reassoc failed','PMKID mismatch','No AP response','802.11r FT fail','Channel congested'];
+  const reason=reasons[Math.floor(Math.random()*reasons.length)];
+  ST.hoFail++; ST.rssi=Math.max(-93,ST.rssi-(5+Math.floor(Math.random()*10)));
+  addFailMarker(ST.deviceLat,ST.deviceLng,ST.rssi,reason);
+  addLog('FAILHO',`${ST.curAP.id} — ${reason} RSSI:${ST.rssi}dBm`);
+  showDrop(true); updateUI();
+  setTimeout(()=>{
+    showDrop(false);
+    const next=AP_POOL.filter(a=>a.id!==ST.curAP.id)[Math.floor(Math.random()*(AP_POOL.length-1))];
+    ST.curAP=next; ST.hoCount++;
+    ST.rssi=Math.max(-88,Math.min(-50,ST.rssi+10+Math.floor(Math.random()*12)));
+    ST.hoLastMs=80+Math.floor(Math.random()*120);
+    addLog('CONN',`Recovered → ${next.id} RSSI:${ST.rssi}dBm`);
+    updateUI();
+  },3000);
+}
+function simWeak(){
+  ST.rssi=-79-Math.floor(Math.random()*12); ST.snr=5+Math.floor(Math.random()*9);
+  ST.tx=24+Math.floor(Math.random()*36); ST.rx=18+Math.floor(Math.random()*30);
+  addTrailPoint(ST.deviceLat,ST.deviceLng,ST.rssi);
+  addLog('WARN',`Weak zone: ${ST.rssi}dBm SNR ${ST.snr}dB`); updateUI();
+}
+function simRecover(){
+  showDrop(false);
+  ST.rssi=-52-Math.floor(Math.random()*12); ST.snr=28+Math.floor(Math.random()*14);
+  ST.tx=250+Math.floor(Math.random()*150); ST.rx=200+Math.floor(Math.random()*100);
+  ST.noise=-91-Math.floor(Math.random()*7);
+  addTrailPoint(ST.deviceLat,ST.deviceLng,ST.rssi);
+  addLog('CONN',`Recovered: ${ST.rssi}dBm SNR ${ST.snr}dB`); updateUI();
+}
+
+// ── BACKGROUND DRIFT ───────────────────────────────────
+let bgT=0;
+setInterval(()=>{
+  bgT++;
+  if(ST.dropped||ST.walkInterval)return;
+  ST.rssi=Math.max(-95,Math.min(-40,ST.rssi+(Math.random()-.5)*1.8));
+  ST.snr=Math.max(1,Math.min(45,Math.round(ST.snr+(Math.random()-.5))));
+  ST.lat=Math.max(1,Math.min(50,ST.lat+Math.round((Math.random()-.5)*2)));
+  ST.tx=Math.max(12,Math.min(866,ST.tx+Math.round((Math.random()-.5)*8)));
+  ST.rx=Math.max(12,Math.min(600,ST.rx+Math.round((Math.random()-.5)*6)));
+  updateUI();
+  if(bgT%40===0) addLog('INFO',`Heartbeat: ${Math.round(ST.rssi)}dBm SNR ${ST.snr}dB ${ST.curAP.id}`);
+},800);
+
+// ── INIT ───────────────────────────────────────────────
+addLog('CONN','Zebra WiFi Trail started');
+addLog('CONN',`SSID: Zebra-Corp-5G · AP: ${ST.curAP.id}`);
+addLog('INFO','Tap RSSI pill for signal details · menu for legend');
+addTrailPoint(ST.deviceLat,ST.deviceLng,ST.rssi);
+updateUI();
+startGPS();
+}); // end DOMContentLoaded
+</script>
+</body>
+</html>
