@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Zebra WiFi Trail</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@700;900&display=swap');
+
+:root {
+  --accent:#00c8ff; --green:#00ff7a; --yellow:#ffe000;
+  --orange:#ff8800; --red:#ff2244;
+  --panel:rgba(6,10,16,0.88); --border:rgba(0,200,255,0.22);
+  --mono:'Share Tech Mono',monospace; --head:'Barlow Condensed',sans-serif;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{width:100%;height:100%;overflow:hidden;background:#06080c;}
+
+/* MAP */
+#map{position:fixed;inset:0;width:100%;height:100%;z-index:0;}
+.leaflet-container{background:#06080c!important;}
+.leaflet-control-zoom{margin:0!important;}
+.leaflet-bottom.leaflet-right{bottom:6px!important;right:6px!important;}
+
+/* TOP BAR */
+#topbar{
+  position:fixed;top:0;left:0;right:0;z-index:600;
+  height:44px;background:var(--panel);border-bottom:1px solid var(--border);
+  backdrop-filter:blur(14px);display:flex;align-items:center;
+  padding:0 8px;gap:6px;
+}
+.tb-logo{
+  width:22px;height:22px;flex-shrink:0;background:var(--accent);
+  clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--head);font-weight:900;font-size:10px;color:#000;
+}
+.tb-title{font-family:var(--head);font-weight:900;font-size:13px;letter-spacing:3px;color:#fff;text-transform:uppercase;flex-shrink:0;}
+
+/* RSSI PILL */
+#rssi-pill{
+  display:flex;align-items:center;gap:4px;background:rgba(0,0,0,.55);
+  border:1px solid var(--border);border-radius:100px;padding:3px 8px;
+  margin-left:auto;cursor:pointer;flex-shrink:0;
+}
+#rssi-pill-val{font-family:var(--mono);font-size:14px;line-height:1;}
+#rssi-pill-unit{font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.5);}
+.pill-bars{display:flex;align-items:flex-end;gap:2px;height:13px;}
+.pb{width:3px;background:rgba(255,255,255,.12);border-radius:1px 1px 0 0;}
+.pb:nth-child(1){height:25%}.pb:nth-child(2){height:45%}.pb:nth-child(3){height:65%}.pb:nth-child(4){height:82%}.pb:nth-child(5){height:100%}
+.pb.on{background:var(--green)}.pb.on.y{background:var(--yellow)}.pb.on.o{background:var(--orange)}.pb.on.r{background:var(--red)}
+
+/* PING PILL */
+#ping-pill{
+  display:flex;align-items:center;gap:4px;background:rgba(0,0,0,.55);
+  border:1px solid rgba(0,255,122,.22);border-radius:100px;padding:3px 8px;
+  cursor:pointer;flex-shrink:0;
+}
+#ping-pill-val{font-family:var(--mono);font-size:14px;color:var(--green);line-height:1;}
+#ping-pill-unit{font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.5);}
+#ping-pill-loss{font-family:var(--mono);font-size:9px;color:rgba(180,200,220,.5);}
+
+.pulse{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;animation:blink 1.1s infinite ease-in-out;}
+@keyframes blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.2;transform:scale(.5)}}
+
+/* ICON BUTTONS */
+.tb-icon-btn{
+  width:30px;height:30px;flex-shrink:0;background:rgba(0,0,0,.4);
+  border:1px solid var(--border);border-radius:4px;display:flex;
+  align-items:center;justify-content:center;cursor:pointer;font-size:15px;color:rgba(180,200,220,.8);
+}
+.mb-line{width:15px;height:2px;background:rgba(180,200,220,.7);border-radius:1px;margin:2px 0;}
+
+/* ── TOGGLE PANEL — floating right side ── */
+#toggle-panel{
+  position:fixed;top:52px;right:8px;z-index:590;
+  display:flex;flex-direction:column;gap:5px;
+}
+.toggle-row{
+  display:flex;align-items:center;gap:8px;
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:20px;padding:5px 10px;backdrop-filter:blur(10px);
+  cursor:pointer;
+}
+.toggle-label{font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:rgba(180,200,220,.65);white-space:nowrap;}
+
+/* Toggle switch */
+.tgl{
+  position:relative;width:32px;height:18px;flex-shrink:0;
+}
+.tgl input{opacity:0;width:0;height:0;position:absolute;}
+.tgl-track{
+  position:absolute;inset:0;border-radius:9px;
+  background:rgba(255,255,255,.12);transition:background .2s;cursor:pointer;
+}
+.tgl input:checked + .tgl-track{background:var(--accent);}
+.tgl-thumb{
+  position:absolute;top:3px;left:3px;width:12px;height:12px;
+  border-radius:50%;background:#fff;transition:transform .2s;pointer-events:none;
+}
+.tgl input:checked ~ .tgl-thumb{transform:translateX(14px);}
+.tgl-track.green-on input:checked + .tgl-track{background:var(--green);}
+
+/* ── DETAIL DRAWER ── */
+#drawer{
+  position:fixed;bottom:0;left:0;right:0;z-index:700;
+  background:rgba(6,10,16,0.97);border-top:1px solid var(--border);
+  backdrop-filter:blur(16px);transform:translateY(100%);
+  transition:transform .28s cubic-bezier(.4,0,.2,1);
+  max-height:72vh;display:flex;flex-direction:column;
+}
+#drawer.open{transform:translateY(0);}
+.drawer-handle{width:36px;height:4px;border-radius:2px;background:rgba(180,200,220,.2);margin:8px auto 5px;flex-shrink:0;}
+.drawer-tabs{display:flex;border-bottom:1px solid rgba(255,255,255,.06);flex-shrink:0;overflow-x:auto;}
+.drawer-tabs::-webkit-scrollbar{display:none;}
+.dtab{
+  flex:1;min-width:50px;padding:7px 4px;font-family:var(--mono);font-size:8.5px;
+  letter-spacing:1.5px;text-transform:uppercase;text-align:center;
+  color:rgba(180,200,220,.35);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap;
+}
+.dtab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.drawer-body{overflow-y:auto;flex:1;padding:12px 14px 24px;}
+.drawer-body::-webkit-scrollbar{width:3px;}
+.drawer-body::-webkit-scrollbar-thumb{background:rgba(0,200,255,.2);}
+.tab-pane{display:none;}.tab-pane.active{display:block;}
+
+/* Shared cell styles */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;}
+.dcell{background:rgba(255,255,255,.04);border-radius:3px;padding:8px;}
+.dc-val{font-family:var(--mono);font-size:19px;color:var(--accent);line-height:1;}
+.dc-key{font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.35);letter-spacing:1px;text-transform:uppercase;margin-top:2px;}
+
+/* Ping tab specific */
+.ping-big{font-family:var(--mono);font-size:38px;color:var(--green);line-height:1;text-align:center;margin:6px 0 2px;}
+.ping-sub{font-family:var(--mono);font-size:9px;color:rgba(180,200,220,.4);text-align:center;letter-spacing:1px;margin-bottom:10px;}
+#ping-history-bars{display:flex;align-items:flex-end;gap:2px;height:48px;margin:8px 0;}
+.ph-bar{flex:1;border-radius:1px 1px 0 0;min-height:3px;transition:height .2s,background .2s;}
+.loss-badge{
+  display:inline-block;font-family:var(--mono);font-size:11px;
+  padding:3px 10px;border-radius:3px;margin-top:4px;
+}
+
+/* AP tab */
+.ap-blabel{font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.3);letter-spacing:2px;text-transform:uppercase;margin-bottom:3px;}
+.ap-id{font-family:var(--mono);font-size:14px;color:#fff;}
+.ap-mac{font-family:var(--mono);font-size:9px;color:rgba(180,200,220,.4);margin-top:2px;}
+.ap-ch{font-family:var(--mono);font-size:9px;color:var(--yellow);margin-top:2px;}
+
+/* Log tab */
+.log-row{display:grid;grid-template-columns:56px 54px 1fr;gap:5px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);font-family:var(--mono);font-size:9px;animation:fadeIn .2s ease;}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.l-ts{color:rgba(180,200,220,.28);}
+.l-type{text-transform:uppercase;font-weight:600;}
+.l-type.CONN{color:var(--green)}.l-type.HANDOFF{color:var(--yellow)}
+.l-type.FAILHO{color:var(--red)}.l-type.WARN{color:var(--orange)}
+.l-type.DROP{color:var(--red)}.l-type.INFO{color:var(--accent)}
+.l-type.GPS{color:#a855f7}.l-type.PING{color:#00e5cc}
+.l-msg{color:rgba(180,200,220,.65);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* Legend */
+.leg-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-family:var(--mono);font-size:10px;color:rgba(180,200,220,.75);}
+.leg-sw{width:26px;height:5px;border-radius:3px;flex-shrink:0;}
+.leg-x{width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--red);border:1.5px solid var(--red);border-radius:50%;flex-shrink:0;font-weight:900;}
+
+/* ── SIM FAB — bottom left ── */
+#sim-fab{position:fixed;left:8px;bottom:14px;z-index:600;display:flex;flex-direction:column;gap:5px;align-items:flex-start;}
+.fab-row{display:flex;gap:4px;}
+.fab{
+  font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;
+  padding:5px 8px;border-radius:3px;border:1px solid;cursor:pointer;
+  background:rgba(6,10,16,.88);backdrop-filter:blur(8px);
+  transition:transform .15s,opacity .15s;white-space:nowrap;
+}
+.fab:active{transform:scale(.94);opacity:.8;}
+.fb-blue{color:var(--accent);border-color:rgba(0,200,255,.3);}
+.fb-red{color:var(--red);border-color:rgba(255,34,68,.3);}
+.fb-yellow{color:var(--yellow);border-color:rgba(255,224,0,.3);}
+.fb-green{color:var(--green);border-color:rgba(0,255,122,.3);}
+.fb-orange{color:var(--orange);border-color:rgba(255,136,0,.3);}
+
+/* GPS badge */
+#gps-badge{
+  position:fixed;top:50px;left:8px;z-index:590;
+  font-family:var(--mono);font-size:9px;color:rgba(180,200,220,.45);
+  background:rgba(6,10,16,.75);border:1px solid rgba(0,200,255,.12);
+  border-radius:3px;padding:3px 7px;backdrop-filter:blur(6px);pointer-events:none;
+}
+
+/* ALERT */
+#alert-banner{
+  display:none;position:fixed;top:50px;left:50%;transform:translateX(-50%);z-index:800;
+  background:var(--red);color:#fff;font-family:var(--head);font-weight:700;font-size:12px;
+  letter-spacing:2px;text-transform:uppercase;padding:6px 16px;border-radius:3px;
+  animation:flashB .7s infinite ease-in-out;white-space:nowrap;pointer-events:none;
+}
+@keyframes flashB{0%,100%{opacity:1}50%{opacity:.5}}
+#drop-overlay{display:none;position:fixed;inset:0;z-index:200;background:rgba(255,0,51,.06);pointer-events:none;animation:flashOv .5s infinite ease-in-out;}
+@keyframes flashOv{0%,100%{opacity:1}50%{opacity:0}}
+
+/* Leaflet popup */
+.leaflet-popup-content-wrapper{background:rgba(6,10,16,.97)!important;border:1px solid rgba(0,200,255,.3)!important;border-radius:4px!important;color:#c8d8e8!important;font-family:var(--mono)!important;font-size:11px!important;max-width:220px!important;}
+.leaflet-popup-tip{background:rgba(6,10,16,.97)!important;}
+.leaflet-popup-close-button{color:#c8d8e8!important;top:4px!important;right:6px!important;}
+</style>
+</head>
+<body>
+
+<div id="drop-overlay"></div>
+<div id="alert-banner">&#9888; SIGNAL DROPPED</div>
+<div id="map"></div>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="tb-logo">Z</div>
+  <div class="tb-title">WiFi Trail</div>
+
+  <!-- RSSI pill -->
+  <div id="rssi-pill" onclick="openDrawer('signal')">
+    <div class="pill-bars">
+      <div class="pb" id="pb1"></div><div class="pb" id="pb2"></div>
+      <div class="pb" id="pb3"></div><div class="pb" id="pb4"></div>
+      <div class="pb" id="pb5"></div>
+    </div>
+    <div id="rssi-pill-val" style="color:var(--green)">-65</div>
+    <div id="rssi-pill-unit">dBm</div>
+    <div class="pulse" id="pulse-dot"></div>
+  </div>
+
+  <!-- Ping pill -->
+  <div id="ping-pill" onclick="openDrawer('ping')">
+    <div id="ping-pill-val">—</div>
+    <div id="ping-pill-unit">ms</div>
+    <div id="ping-pill-loss" style="margin-left:3px">0%✗</div>
+  </div>
+
+  <!-- Locate -->
+  <div class="tb-icon-btn" onclick="locateMe()" title="Center on me">&#x25CE;</div>
+  <!-- Menu -->
+  <div class="tb-icon-btn" onclick="openDrawer('legend')" style="flex-direction:column;">
+    <div class="mb-line"></div><div class="mb-line"></div><div class="mb-line"></div>
+  </div>
+</div>
+
+<!-- GPS BADGE -->
+<div id="gps-badge">&#128507; Acquiring GPS…</div>
+
+<!-- TOGGLE PANEL -->
+<div id="toggle-panel">
+  <!-- Signal trail toggle -->
+  <div class="toggle-row">
+    <span class="toggle-label">Signal Trail</span>
+    <label class="tgl">
+      <input type="checkbox" id="tgl-signal" checked onchange="toggleSignalTrail(this.checked)">
+      <div class="tgl-track"></div>
+      <div class="tgl-thumb"></div>
+    </label>
+  </div>
+  <!-- Ping overlay toggle -->
+  <div class="toggle-row">
+    <span class="toggle-label">Ping Overlay</span>
+    <label class="tgl">
+      <input type="checkbox" id="tgl-ping" checked onchange="togglePingOverlay(this.checked)">
+      <div class="tgl-track"></div>
+      <div class="tgl-thumb"></div>
+    </label>
+  </div>
+</div>
+
+<!-- SIM CONTROLS -->
+<div id="sim-fab">
+  <div class="fab-row">
+    <button class="fab fb-yellow" onclick="simWalk()" id="walk-btn">&#9655; Walk</button>
+    <button class="fab fb-red"    onclick="stopWalk()" id="stop-btn" style="display:none">&#9646;&#9646; Stop</button>
+    <button class="fab fb-blue"   onclick="clearTrail()">&#8635; Clear</button>
+  </div>
+  <div class="fab-row">
+    <button class="fab fb-blue"   onclick="simHandoff()">&#8658; Handoff</button>
+    <button class="fab fb-red"    onclick="simFailedHandoff()">&#10007; Fail HO</button>
+  </div>
+  <div class="fab-row">
+    <button class="fab fb-orange" onclick="simWeak()">&#9888; Weak</button>
+    <button class="fab fb-green"  onclick="simRecover()">&#10003; Recover</button>
+  </div>
+</div>
+
+<!-- DETAIL DRAWER -->
+<div id="drawer">
+  <div class="drawer-handle" onclick="closeDrawer()"></div>
+  <div class="drawer-tabs">
+    <div class="dtab active" id="tab-signal"  onclick="switchTab('signal')">Signal</div>
+    <div class="dtab"        id="tab-ping"    onclick="switchTab('ping')">Ping</div>
+    <div class="dtab"        id="tab-ap"      onclick="switchTab('ap')">AP</div>
+    <div class="dtab"        id="tab-log"     onclick="switchTab('log')">Log</div>
+    <div class="dtab"        id="tab-legend"  onclick="switchTab('legend')">Legend</div>
+  </div>
+  <div class="drawer-body">
+
+    <!-- SIGNAL PANE -->
+    <div class="tab-pane active" id="pane-signal">
+      <div class="grid2">
+        <div class="dcell"><div class="dc-val" id="d-rssi">-65</div><div class="dc-key">RSSI dBm</div></div>
+        <div class="dcell"><div class="dc-val" id="d-snr">28</div><div class="dc-key">SNR dB</div></div>
+        <div class="dcell"><div class="dc-val" id="d-noise">-93</div><div class="dc-key">Noise Floor</div></div>
+        <div class="dcell"><div class="dc-val" id="d-latency">4</div><div class="dc-key">Latency ms</div></div>
+        <div class="dcell"><div class="dc-val" id="d-tx">300</div><div class="dc-key">TX Mbps</div></div>
+        <div class="dcell"><div class="dc-val" id="d-rx">270</div><div class="dc-key">RX Mbps</div></div>
+      </div>
+      <div class="dcell" style="text-align:center;">
+        <div class="dc-val" id="d-cov" style="font-size:16px;">Good</div>
+        <div class="dc-key">Coverage Quality</div>
+      </div>
+    </div>
+
+    <!-- PING PANE -->
+    <div class="tab-pane" id="pane-ping">
+      <div class="ping-big" id="d-ping-ms">—</div>
+      <div class="ping-sub" id="d-ping-sub">Waiting for first ping…</div>
+
+      <!-- Rolling history bars -->
+      <div id="ping-history-bars"></div>
+
+      <div class="grid3" style="margin-top:6px;">
+        <div class="dcell"><div class="dc-val" id="d-ping-min">—</div><div class="dc-key">Min ms</div></div>
+        <div class="dcell"><div class="dc-val" id="d-ping-avg">—</div><div class="dc-key">Avg ms</div></div>
+        <div class="dcell"><div class="dc-val" id="d-ping-max">—</div><div class="dc-key">Max ms</div></div>
+      </div>
+      <div class="grid2">
+        <div class="dcell"><div class="dc-val" id="d-ping-sent">0</div><div class="dc-key">Sent</div></div>
+        <div class="dcell"><div class="dc-val" id="d-ping-lost" style="color:var(--red)">0</div><div class="dc-key">Lost</div></div>
+        <div class="dcell" style="grid-column:1/-1;">
+          <div class="dc-val" id="d-ping-loss" style="color:var(--green)">0.0%</div>
+          <div class="dc-key">Packet Loss</div>
+        </div>
+      </div>
+
+      <div style="font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.3);margin-top:8px;letter-spacing:1px;">
+        Pings 8.8.8.8 via fetch HEAD — round-trip latency proxy.<br>
+        Toggle Ping Overlay to show loss dots on the map trail.
+      </div>
+    </div>
+
+    <!-- AP PANE -->
+    <div class="tab-pane" id="pane-ap">
+      <div style="margin-bottom:10px;">
+        <div class="ap-blabel">Current Access Point</div>
+        <div class="ap-id"  id="d-apid">AP-ZONE-07</div>
+        <div class="ap-mac" id="d-apmac">00:1A:2B:3C:4D:05</div>
+        <div class="ap-ch"  id="d-apch">CH 36 · 5GHz · WPA3-ENT</div>
+      </div>
+      <div class="grid3">
+        <div class="dcell"><div class="dc-val" id="d-ho">0</div><div class="dc-key">Handoffs</div></div>
+        <div class="dcell"><div class="dc-val" id="d-fail" style="color:var(--red)">0</div><div class="dc-key">Failed</div></div>
+        <div class="dcell"><div class="dc-val" id="d-homs">—</div><div class="dc-key">Last ms</div></div>
+      </div>
+    </div>
+
+    <!-- LOG PANE -->
+    <div class="tab-pane" id="pane-log">
+      <div id="log-inner"></div>
+    </div>
+
+    <!-- LEGEND PANE -->
+    <div class="tab-pane" id="pane-legend">
+      <div style="font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.35);letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">Signal Trail Color</div>
+      <div class="leg-row"><div class="leg-sw" style="background:var(--green)"></div>Excellent &gt; -60 dBm</div>
+      <div class="leg-row"><div class="leg-sw" style="background:var(--yellow)"></div>Good  -60 to -70 dBm</div>
+      <div class="leg-row"><div class="leg-sw" style="background:var(--orange)"></div>Fair  -70 to -80 dBm</div>
+      <div class="leg-row"><div class="leg-sw" style="background:var(--red)"></div>Poor &lt; -80 dBm</div>
+      <div style="font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.35);letter-spacing:2px;text-transform:uppercase;margin:10px 0 8px;">Map Markers</div>
+      <div class="leg-row"><div class="leg-x">&#10007;</div>Failed AP handoff</div>
+      <div class="leg-row"><div style="width:12px;height:12px;border-radius:50%;background:#ff4400;border:2px solid #fff;flex-shrink:0;"></div>Packet loss detected</div>
+      <div style="font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.25);margin-top:10px;line-height:1.7;letter-spacing:.5px;">
+        Use the toggles (top right) to independently show or hide the signal trail and ping loss dots on the map.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+// ── STATE ──────────────────────────────────────────────
+const ST = {
+  rssi:-65, snr:28, noise:-93, tx:300, rx:270, latency:4,
+  curAP:{id:'AP-ZONE-07', mac:'00:1A:2B:3C:4D:05', ch:'CH 36 · 5GHz · WPA3-ENT'},
+  hoCount:0, hoFail:0, hoLastMs:null,
+  dropped:false,
+  trailPoints:[], trailLayers:[], failMarkers:[], pingMarkers:[],
+  showSignal:true, showPing:true,
+  deviceLat:40.8592367, deviceLng:-86.8762543,
+  walkInterval:null, walkAngle:Math.random()*360,
+  logCount:0
+};
+
+// Ping state
+const PING = {
+  interval:null,
+  PERIOD:3000,        // ping every 3 seconds
+  TIMEOUT:2000,       // 2s timeout = lost packet
+  history:[],         // last 40 rtt values (null = lost)
+  HISTORY_LEN:40,
+  sent:0, lost:0,
+  min:null, max:null, sum:0, count:0,
+  lastRtt:null,
+  TARGET:'https://www.google.com/generate_204', // no-cors 204 endpoint, great for RTT
+};
+
+const AP_POOL = [
+  {id:'AP-ZONE-01',mac:'00:1A:2B:AA:01:01',ch:'CH 1 · 2.4GHz · WPA3-ENT'},
+  {id:'AP-ZONE-03',mac:'00:1A:2B:AA:01:03',ch:'CH 6 · 2.4GHz · WPA3-ENT'},
+  {id:'AP-ZONE-05',mac:'00:1A:2B:AA:01:05',ch:'CH 11 · 2.4GHz · WPA3-ENT'},
+  {id:'AP-ZONE-07',mac:'00:1A:2B:AA:01:07',ch:'CH 36 · 5GHz · WPA3-ENT'},
+  {id:'AP-ZONE-09',mac:'00:1A:2B:AA:01:09',ch:'CH 40 · 5GHz · WPA3-ENT'},
+  {id:'AP-ZONE-11',mac:'00:1A:2B:AA:01:11',ch:'CH 44 · 5GHz · WPA3-ENT'},
+  {id:'AP-ZONE-13',mac:'00:1A:2B:AA:01:13',ch:'CH 149 · 5GHz · WPA3-ENT'},
+];
+
+// ── MAP ────────────────────────────────────────────────
+const map = L.map('map',{center:[ST.deviceLat,ST.deviceLng],zoom:18,zoomControl:true});
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+  maxZoom:21,
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  subdomains:'abcd'
+}).addTo(map);
+
+function makeDevIcon(color){
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:16px;height:16px;border-radius:50%;background:${color};border:2.5px solid #fff;box-shadow:0 0 8px ${color}88;"></div>`,
+    iconSize:[16,16],iconAnchor:[8,8]
+  });
+}
+const devMarker = L.marker([ST.deviceLat,ST.deviceLng],{icon:makeDevIcon('#ffe000'),zIndexOffset:1000}).addTo(map);
+
+// ── HELPERS ────────────────────────────────────────────
+function rssiColor(r){return r>=-60?'#00ff7a':r>=-70?'#ffe000':r>=-80?'#ff8800':'#ff2244';}
+function rssiBarCls(r){return r>=-60?'on':r>=-70?'on y':r>=-80?'on o':'on r';}
+function rssiLevel(r){return r>=-60?5:r>=-67?4:r>=-74?3:r>=-80?2:1;}
+function rssiCov(r){return r>=-60?'Excellent':r>=-70?'Good':r>=-80?'Fair':'Poor';}
+
+function pingColor(rtt){
+  if(rtt===null) return '#ff2244';
+  if(rtt<30)  return '#00ff7a';
+  if(rtt<80)  return '#ffe000';
+  if(rtt<150) return '#ff8800';
+  return '#ff2244';
+}
+
+// ── TRAIL ──────────────────────────────────────────────
+function addTrailPoint(lat,lng,rssi){
+  const pt={lat,lng,rssi,ts:Date.now()};
+  ST.trailPoints.push(pt);
+  if(ST.trailPoints.length>=2){
+    const prev=ST.trailPoints[ST.trailPoints.length-2];
+    const color=rssiColor(rssi);
+    const seg=L.polyline([[prev.lat,prev.lng],[lat,lng]],{
+      color,weight:6,opacity:0.88,lineCap:'round',lineJoin:'round'
+    });
+    if(ST.showSignal) seg.addTo(map);
+    const ts=new Date(pt.ts).toTimeString().slice(0,8);
+    seg.bindPopup(`<b style="color:${color}">${rssiCov(rssi)}</b><br>RSSI: <b>${rssi} dBm</b><br>${ts}<br><span style="opacity:.5">${lat.toFixed(5)}, ${lng.toFixed(5)}</span>`);
+    ST.trailLayers.push(seg);
+  }
+  devMarker.setLatLng([lat,lng]);
+  devMarker.setIcon(makeDevIcon(rssiColor(rssi)));
+}
+
+function addFailMarker(lat,lng,rssi,reason){
+  const icon=L.divIcon({
+    className:'',
+    html:`<div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#ff2244;background:rgba(6,10,16,.9);border:2px solid #ff2244;border-radius:50%;box-shadow:0 0 10px #ff224466;cursor:pointer;">✕</div>`,
+    iconSize:[20,20],iconAnchor:[10,10]
+  });
+  const m=L.marker([lat,lng],{icon,zIndexOffset:900}).addTo(map);
+  const ts=new Date().toTimeString().slice(0,8);
+  m.bindPopup(`<b style="color:#ff2244">✕ FAILED HANDOFF</b><br>${ts}<br>RSSI: <b>${rssi} dBm</b><br>${reason}<br><span style="opacity:.5">${lat.toFixed(5)}, ${lng.toFixed(5)}</span>`);
+  m.openPopup();
+  ST.failMarkers.push(m);
+}
+
+function addPingMarker(lat,lng,rtt,loss){
+  const icon=L.divIcon({
+    className:'',
+    html:`<div style="width:11px;height:11px;border-radius:50%;background:#ff4400;border:2px solid #fff;box-shadow:0 0 6px #ff440088;"></div>`,
+    iconSize:[11,11],iconAnchor:[5,5]
+  });
+  const m=L.marker([lat,lng],{icon,zIndexOffset:800});
+  const ts=new Date().toTimeString().slice(0,8);
+  const rttTxt = rtt===null?'TIMEOUT':rtt+'ms';
+  m.bindPopup(`<b style="color:#ff4400">&#9679; PACKET LOSS</b><br>${ts}<br>RTT: <b>${rttTxt}</b><br>Session loss: <b>${loss}%</b><br><span style="opacity:.5">${lat.toFixed(5)}, ${lng.toFixed(5)}</span>`);
+  if(ST.showPing) m.addTo(map);
+  ST.pingMarkers.push(m);
+}
+
+function clearTrail(){
+  ST.trailLayers.forEach(l=>map.removeLayer(l));
+  ST.trailLayers=[];
+  ST.failMarkers.forEach(m=>map.removeLayer(m));
+  ST.failMarkers=[];
+  ST.pingMarkers.forEach(m=>map.removeLayer(m));
+  ST.pingMarkers=[];
+  ST.trailPoints=[];
+  addLog('INFO','Trail and markers cleared');
+}
+
+// ── TOGGLES ────────────────────────────────────────────
+function toggleSignalTrail(on){
+  ST.showSignal=on;
+  ST.trailLayers.forEach(l=> on ? l.addTo(map) : map.removeLayer(l));
+  addLog('INFO','Signal trail '+(on?'ON':'OFF'));
+}
+
+function togglePingOverlay(on){
+  ST.showPing=on;
+  ST.pingMarkers.forEach(m=> on ? m.addTo(map) : map.removeLayer(m));
+  addLog('INFO','Ping overlay '+(on?'ON':'OFF'));
+}
+
+// ── PING ENGINE ────────────────────────────────────────
+// Uses fetch with no-cors to a reliable lightweight endpoint.
+// RTT = time from fetch start to response/error.
+// Timeout is enforced manually via Promise.race.
+// Note: no-cors means we can't read the response body,
+// but we CAN measure round-trip time reliably.
+
+async function doPing(){
+  PING.sent++;
+  const t0 = performance.now();
+  let rtt = null;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(()=>controller.abort(), PING.TIMEOUT);
+    await fetch(PING.TARGET, {
+      method:'HEAD', mode:'no-cors', cache:'no-store',
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    rtt = Math.round(performance.now() - t0);
+  } catch(e) {
+    rtt = null; // timeout or network error = lost
+  }
+
+  const lost = (rtt === null || rtt > PING.TIMEOUT);
+  if(lost){
+    PING.lost++;
+    rtt = null;
+  } else {
+    PING.sum += rtt; PING.count++;
+    if(PING.min===null||rtt<PING.min) PING.min=rtt;
+    if(PING.max===null||rtt>PING.max) PING.max=rtt;
+    PING.lastRtt = rtt;
+  }
+
+  // Rolling history
+  PING.history.push(rtt);
+  if(PING.history.length>PING.HISTORY_LEN) PING.history.shift();
+
+  const lossPct = PING.sent>0 ? ((PING.lost/PING.sent)*100).toFixed(1) : '0.0';
+
+  // Drop a marker on the map if packet lost
+  if(lost && ST.deviceLat){
+    addPingMarker(ST.deviceLat, ST.deviceLng, rtt, lossPct);
+    addLog('PING', `LOST · sent:${PING.sent} loss:${lossPct}%`);
+  } else {
+    // Only log every 5th successful ping to keep log clean
+    if(PING.sent % 5 === 0){
+      addLog('PING', `${rtt}ms · min:${PING.min} avg:${PING.count>0?Math.round(PING.sum/PING.count):'—'} max:${PING.max} loss:${lossPct}%`);
+    }
+  }
+
+  updatePingUI(rtt, lossPct);
+}
+
+function startPing(){
+  if(PING.interval) return;
+  PING.interval = setInterval(doPing, PING.PERIOD);
+  doPing(); // fire immediately
+  addLog('PING','Ping engine started → '+PING.TARGET);
+}
+
+function updatePingUI(rtt, lossPct){
+  const color = pingColor(rtt);
+  const rttTxt = rtt===null ? 'LOST' : rtt+'ms';
+  const avgRtt = PING.count>0 ? Math.round(PING.sum/PING.count) : null;
+
+  // Top bar pill
+  document.getElementById('ping-pill-val').textContent = rtt===null ? '✗' : rtt;
+  document.getElementById('ping-pill-val').style.color = color;
+  document.getElementById('ping-pill-loss').textContent = lossPct+'%✗';
+  document.getElementById('ping-pill-loss').style.color = parseFloat(lossPct)>5 ? '#ff8800' : 'rgba(180,200,220,.4)';
+
+  // Drawer ping pane
+  document.getElementById('d-ping-ms').textContent = rttTxt;
+  document.getElementById('d-ping-ms').style.color = color;
+  document.getElementById('d-ping-sub').textContent =
+    rtt===null ? '⚠ Packet lost / timeout' : `RTT ${rtt}ms · ${pingQual(rtt)}`;
+
+  document.getElementById('d-ping-min').textContent = PING.min!==null ? PING.min : '—';
+  document.getElementById('d-ping-avg').textContent = avgRtt!==null ? avgRtt : '—';
+  document.getElementById('d-ping-max').textContent = PING.max!==null ? PING.max : '—';
+  document.getElementById('d-ping-sent').textContent = PING.sent;
+  document.getElementById('d-ping-lost').textContent = PING.lost;
+
+  const lossEl = document.getElementById('d-ping-loss');
+  lossEl.textContent = lossPct+'%';
+  lossEl.style.color = parseFloat(lossPct)>10?'#ff2244':parseFloat(lossPct)>3?'#ff8800':'#00ff7a';
+
+  // History bars
+  const container = document.getElementById('ping-history-bars');
+  container.innerHTML='';
+  const maxVal = Math.max(200, ...PING.history.filter(v=>v!==null));
+  PING.history.forEach(v=>{
+    const bar = document.createElement('div');
+    bar.className='ph-bar';
+    const h = v===null ? 100 : Math.max(8, Math.round((v/maxVal)*100));
+    bar.style.height=h+'%';
+    bar.style.background = pingColor(v);
+    bar.style.opacity = v===null ? '0.9' : '0.75';
+    bar.title = v===null ? 'Lost' : v+'ms';
+    container.appendChild(bar);
+  });
+}
+
+function pingQual(rtt){
+  if(rtt===null) return 'Lost';
+  if(rtt<30)  return 'Excellent';
+  if(rtt<80)  return 'Good';
+  if(rtt<150) return 'Fair';
+  return 'Poor';
+}
+
+// ── UI ─────────────────────────────────────────────────
+function updateUI(){
+  const r=ST.rssi, c=rssiColor(r), lvl=rssiLevel(r), bc=rssiBarCls(r);
+  // Top pill
+  document.getElementById('rssi-pill-val').textContent=r;
+  document.getElementById('rssi-pill-val').style.color=c;
+  for(let i=1;i<=5;i++){
+    document.getElementById('pb'+i).className='pb'+(i<=lvl?' '+bc:'');
+  }
+  // Signal pane
+  document.getElementById('d-rssi').textContent=r; document.getElementById('d-rssi').style.color=c;
+  document.getElementById('d-snr').textContent=ST.snr;
+  document.getElementById('d-noise').textContent=ST.noise;
+  document.getElementById('d-latency').textContent=ST.latency;
+  document.getElementById('d-tx').textContent=ST.tx;
+  document.getElementById('d-rx').textContent=ST.rx;
+  document.getElementById('d-cov').textContent=rssiCov(r); document.getElementById('d-cov').style.color=c;
+  // AP pane
+  document.getElementById('d-apid').textContent=ST.curAP.id;
+  document.getElementById('d-apmac').textContent=ST.curAP.mac;
+  document.getElementById('d-apch').textContent=ST.curAP.ch;
+  document.getElementById('d-ho').textContent=ST.hoCount;
+  document.getElementById('d-fail').textContent=ST.hoFail;
+  document.getElementById('d-homs').textContent=ST.hoLastMs!==null?ST.hoLastMs+'ms':'—';
+}
+
+function addLog(type,msg){
+  const inn=document.getElementById('log-inner');
+  const ts=new Date().toTimeString().slice(0,8);
+  const el=document.createElement('div');
+  el.className='log-row';
+  el.innerHTML=`<span class="l-ts">${ts}</span><span class="l-type ${type}">${type}</span><span class="l-msg">${msg}</span>`;
+  inn.insertBefore(el,inn.firstChild);
+  while(inn.children.length>200) inn.removeChild(inn.lastChild);
+  ST.logCount++;
+}
+
+function showDrop(v){
+  document.getElementById('alert-banner').style.display=v?'block':'none';
+  document.getElementById('drop-overlay').style.display=v?'block':'none';
+  ST.dropped=v;
+  document.getElementById('pulse-dot').style.background=v?'var(--red)':'var(--green)';
+}
+
+// ── DRAWER ─────────────────────────────────────────────
+function openDrawer(tab){
+  document.getElementById('drawer').classList.add('open');
+  if(tab) switchTab(tab);
+}
+function closeDrawer(){ document.getElementById('drawer').classList.remove('open'); }
+function switchTab(id){
+  document.querySelectorAll('.dtab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  document.getElementById('pane-'+id).classList.add('active');
+  document.getElementById('drawer').classList.add('open');
+}
+let tsy=0;
+document.getElementById('drawer').addEventListener('touchstart',e=>{tsy=e.touches[0].clientY;});
+document.getElementById('drawer').addEventListener('touchend',e=>{ if(e.changedTouches[0].clientY-tsy>60) closeDrawer(); });
+map.on('click',closeDrawer);
+
+// ── GPS ────────────────────────────────────────────────
+const GPS = {
+  ACCURACY_THRESHOLD:25, TRAIL_MIN_DIST:3,
+  watchId:null, retryTimer:null, retryCount:0, MAX_RETRIES:5,
+  firstFix:false, accuracyCircle:null,
+  lastRecordedLat:null, lastRecordedLng:null,
+};
+
+function gpsBadge(txt,color){
+  const el=document.getElementById('gps-badge');
+  el.textContent=txt; el.style.color=color||'rgba(180,200,220,.5)';
+}
+
+function haversineMeters(lat1,lng1,lat2,lng2){
+  const R=6371000,dLat=(lat2-lat1)*Math.PI/180,dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function onGPSSuccess(pos){
+  GPS.retryCount=0; clearTimeout(GPS.retryTimer);
+  const{latitude:lat,longitude:lng,accuracy:acc,heading,speed}=pos.coords;
+  if(GPS.accuracyCircle) map.removeLayer(GPS.accuracyCircle);
+  GPS.accuracyCircle=L.circle([lat,lng],{
+    radius:acc, color:acc<=25?'#00ff7a':'#ff8800',
+    fillColor:acc<=25?'#00ff7a':'#ff8800',
+    fillOpacity:0.05,weight:1,opacity:0.35
+  }).addTo(map);
+  const qual=acc<=10?'#00ff7a':acc<=25?'#ffe000':acc<=50?'#ff8800':'#ff2244';
+  const qualTxt=acc<=10?'Excellent':acc<=25?'Good':acc<=50?'Fair':'Poor';
+  gpsBadge(`GPS ±${Math.round(acc)}m · ${qualTxt}`,qual);
+  if(!GPS.firstFix){
+    GPS.firstFix=true; ST.deviceLat=lat; ST.deviceLng=lng;
+    map.setView([lat,lng],18,{animate:true});
+    devMarker.setLatLng([lat,lng]);
+    GPS.lastRecordedLat=lat; GPS.lastRecordedLng=lng;
+    addLog('GPS',`First fix ±${Math.round(acc)}m · ${qualTxt}`);
+    addTrailPoint(lat,lng,ST.rssi); return;
+  }
+  if(acc>GPS.ACCURACY_THRESHOLD){ addLog('GPS',`Skipped ±${Math.round(acc)}m — too noisy`); return; }
+  ST.deviceLat=lat; ST.deviceLng=lng;
+  const dist=GPS.lastRecordedLat!==null?haversineMeters(GPS.lastRecordedLat,GPS.lastRecordedLng,lat,lng):999;
+  if(dist>=GPS.TRAIL_MIN_DIST){
+    addTrailPoint(lat,lng,ST.rssi);
+    GPS.lastRecordedLat=lat; GPS.lastRecordedLng=lng;
+    const hdg=heading!=null&&!isNaN(heading)?` hdg:${Math.round(heading)}°`:'';
+    const spd=speed!=null&&!isNaN(speed)?` ${(speed*3.6).toFixed(1)}km/h`:'';
+    addLog('GPS',`+${Math.round(dist)}m ±${Math.round(acc)}m${hdg}${spd}`);
+  }
+  devMarker.setLatLng([lat,lng]);
+  map.panTo([lat,lng],{animate:true,duration:.4});
+}
+
+function onGPSError(err){
+  const msgs={1:'Permission denied',2:'Position unavailable',3:'Timeout'};
+  gpsBadge(`⚠ GPS: ${msgs[err.code]||'Error'}`, '#ff8800');
+  addLog('WARN',`GPS (${err.code}): ${msgs[err.code]||'Error'}`);
+  if(err.code===3&&GPS.retryCount<GPS.MAX_RETRIES){
+    GPS.retryCount++;
+    addLog('INFO',`GPS retry ${GPS.retryCount}/${GPS.MAX_RETRIES}…`);
+    if(GPS.watchId){navigator.geolocation.clearWatch(GPS.watchId);GPS.watchId=null;}
+    GPS.retryTimer=setTimeout(()=>startGPSWatch(GPS.retryCount>2),2000);
+  } else if(err.code===1){
+    gpsBadge('⚠ Location denied','#ff2244');
+    addLog('WARN','Enable location permission then reload');
+  }
+}
+
+function startGPSWatch(relaxed){
+  if(!navigator.geolocation){gpsBadge('⚠ GPS N/A','#ff2244');return;}
+  const opts=relaxed
+    ?{enableHighAccuracy:false,maximumAge:5000,timeout:15000}
+    :{enableHighAccuracy:true, maximumAge:1000,timeout:12000};
+  gpsBadge('⏳ Acquiring GPS…','#ffe000');
+  if(!relaxed&&!GPS.firstFix){
+    navigator.geolocation.getCurrentPosition(
+      pos=>{if(!GPS.firstFix) onGPSSuccess(pos);},()=>{},
+      {enableHighAccuracy:false,timeout:6000,maximumAge:10000}
+    );
+  }
+  GPS.watchId=navigator.geolocation.watchPosition(onGPSSuccess,onGPSError,opts);
+}
+
+function startGPS(){ startGPSWatch(false); }
+
+function locateMe(){
+  if(GPS.firstFix) map.setView([ST.deviceLat,ST.deviceLng],18,{animate:true});
+  else gpsBadge('⏳ Still acquiring…','#ffe000');
+}
+
+// ── SIMULATE WALK ──────────────────────────────────────
+function simWalk(){
+  if(ST.walkInterval) return;
+  document.getElementById('walk-btn').style.display='none';
+  document.getElementById('stop-btn').style.display='block';
+  addLog('INFO','Simulated walk started');
+  let step=0;
+  ST.walkInterval=setInterval(()=>{
+    ST.walkAngle+=(Math.random()-.5)*35;
+    const d=(2+Math.random()*3)/111320;
+    ST.deviceLat+=d*Math.cos(ST.walkAngle*Math.PI/180);
+    ST.deviceLng+=d*Math.sin(ST.walkAngle*Math.PI/180)/Math.cos(ST.deviceLat*Math.PI/180);
+    ST.rssi=Math.max(-95,Math.min(-40,ST.rssi+(Math.random()-.5)*4));
+    ST.snr=Math.max(1,Math.min(45,Math.round(ST.snr+(Math.random()-.5)*2)));
+    addTrailPoint(ST.deviceLat,ST.deviceLng,ST.rssi);
+    map.panTo([ST.deviceLat,ST.deviceLng],{animate:true,duration:.5});
+    updateUI(); step++;
+    if(step%18===0){ Math.random()<.2?simFailedHandoff():simHandoff(); }
+    if(ST.rssi<-80&&step%6===0) addLog('WARN',`Weak: ${ST.rssi}dBm`);
+  },1200);
+}
+function stopWalk(){
+  clearInterval(ST.walkInterval); ST.walkInterval=null;
+  document.getElementById('walk-btn').style.display='block';
+  document.getElementById('stop-btn').style.display='none';
+  addLog('INFO','Walk stopped');
+}
+
+// ── SIMULATIONS ────────────────────────────────────────
+function simHandoff(){
+  const prev=ST.curAP;
+  const next=AP_POOL.filter(a=>a.id!==ST.curAP.id)[Math.floor(Math.random()*(AP_POOL.length-1))];
+  const pr=ST.rssi, ms=8+Math.floor(Math.random()*35);
+  ST.curAP=next; ST.hoCount++; ST.hoLastMs=ms;
+  ST.rssi=Math.max(-90,Math.min(-45,ST.rssi+(Math.random()-.35)*15));
+  addLog('HANDOFF',`${prev.id}→${next.id} ${pr}→${ST.rssi}dBm ${ms}ms`);
+  updateUI();
+}
+function simFailedHandoff(){
+  const reasons=['Auth timeout (PMK)','Reassoc failed','PMKID mismatch','No AP response','802.11r FT fail','Channel congested'];
+  const reason=reasons[Math.floor(Math.random()*reasons.length)];
+  ST.hoFail++; ST.rssi=Math.max(-93,ST.rssi-(5+Math.floor(Math.random()*10)));
+  addFailMarker(ST.deviceLat,ST.deviceLng,ST.rssi,reason);
+  addLog('FAILHO',`${ST.curAP.id} — ${reason}`);
+  showDrop(true); updateUI();
+  setTimeout(()=>{
+    showDrop(false);
+    const next=AP_POOL.filter(a=>a.id!==ST.curAP.id)[Math.floor(Math.random()*(AP_POOL.length-1))];
+    ST.curAP=next; ST.hoCount++;
+    ST.rssi=Math.max(-88,Math.min(-50,ST.rssi+10+Math.floor(Math.random()*12)));
+    ST.hoLastMs=80+Math.floor(Math.random()*120);
+    addLog('CONN',`Recovered → ${next.id} ${ST.rssi}dBm`);
+    updateUI();
+  },3000);
+}
+function simWeak(){
+  ST.rssi=-79-Math.floor(Math.random()*12); ST.snr=5+Math.floor(Math.random()*9);
+  ST.tx=24+Math.floor(Math.random()*36); ST.rx=18+Math.floor(Math.random()*30);
+  addTrailPoint(ST.deviceLat,ST.deviceLng,ST.rssi);
+  addLog('WARN',`Weak: ${ST.rssi}dBm SNR ${ST.snr}dB`); updateUI();
+}
+function simRecover(){
+  showDrop(false);
+  ST.rssi=-52-Math.floor(Math.random()*12); ST.snr=28+Math.floor(Math.random()*14);
+  ST.tx=250+Math.floor(Math.random()*150); ST.rx=200+Math.floor(Math.random()*100);
+  ST.noise=-91-Math.floor(Math.random()*7);
+  addTrailPoint(ST.deviceLat,ST.deviceLng,ST.rssi);
+  addLog('CONN',`Recovered: ${ST.rssi}dBm SNR ${ST.snr}dB`); updateUI();
+}
+
+// ── BACKGROUND DRIFT ───────────────────────────────────
+let bgT=0;
+setInterval(()=>{
+  bgT++;
+  if(ST.dropped||ST.walkInterval) return;
+  ST.rssi=Math.max(-95,Math.min(-40,ST.rssi+(Math.random()-.5)*1.8));
+  ST.snr=Math.max(1,Math.min(45,Math.round(ST.snr+(Math.random()-.5))));
+  ST.latency=Math.max(1,Math.min(50,ST.latency+Math.round((Math.random()-.5)*2)));
+  ST.tx=Math.max(12,Math.min(866,ST.tx+Math.round((Math.random()-.5)*8)));
+  ST.rx=Math.max(12,Math.min(600,ST.rx+Math.round((Math.random()-.5)*6)));
+  updateUI();
+  if(bgT%40===0) addLog('INFO',`Heartbeat: ${Math.round(ST.rssi)}dBm SNR ${ST.snr}dB ${ST.curAP.id}`);
+},800);
+
+// ── INIT ───────────────────────────────────────────────
+addLog('CONN','Zebra WiFi Trail started');
+addLog('CONN',`SSID: Zebra-Corp-5G · AP: ${ST.curAP.id}`);
+addLog('INFO','Toggles top-right: Signal Trail & Ping Overlay');
+addTrailPoint(ST.deviceLat,ST.deviceLng,ST.rssi);
+updateUI();
+startGPS();
+startPing();
+
+}); // end DOMContentLoaded
+</script>
+</body>
+</html>
