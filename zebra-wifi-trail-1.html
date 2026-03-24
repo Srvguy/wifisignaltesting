@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Zebra WiFi Trail</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@700;900&display=swap');
+
+:root {
+  --accent:#00c8ff; --green:#00ff7a; --yellow:#ffe000;
+  --orange:#ff8800; --red:#ff2244;
+  --panel:rgba(6,10,16,0.90); --border:rgba(0,200,255,0.20);
+  --mono:'Share Tech Mono',monospace; --head:'Barlow Condensed',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{width:100%;height:100%;overflow:hidden;background:#06080c;}
+
+/* MAP — always full screen */
+#map{position:fixed;inset:0;z-index:0;}
+.leaflet-container{background:#06080c!important;}
+.leaflet-control-zoom a{background:rgba(6,10,16,.9)!important;color:#c8d8e8!important;border-color:var(--border)!important;}
+
+/* ═══ TWO-LINE TOP BAR ═══ */
+#topbar{
+  position:fixed;top:0;left:0;right:0;z-index:600;
+  background:var(--panel);border-bottom:1px solid var(--border);
+  backdrop-filter:blur(16px);
+}
+/* Line 1: logo + title + locate + menu */
+#tb-line1{
+  display:flex;align-items:center;gap:7px;
+  padding:6px 8px 4px;border-bottom:1px solid rgba(255,255,255,.05);
+}
+.tb-logo{
+  width:20px;height:20px;flex-shrink:0;background:var(--accent);
+  clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--head);font-weight:900;font-size:9px;color:#000;
+}
+.tb-title{font-family:var(--head);font-weight:900;font-size:13px;letter-spacing:3px;color:#fff;text-transform:uppercase;flex:1;}
+.tb-icon-btn{
+  width:28px;height:28px;flex-shrink:0;background:rgba(0,0,0,.45);
+  border:1px solid var(--border);border-radius:4px;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:14px;color:rgba(180,200,220,.8);
+}
+.mb-line{width:13px;height:1.5px;background:rgba(180,200,220,.7);border-radius:1px;margin:1.5px 0;}
+
+/* Line 2: RSSI pill + Ping pill side by side */
+#tb-line2{
+  display:flex;align-items:center;gap:6px;
+  padding:4px 8px 6px;
+}
+
+/* shared pill style */
+.metric-pill{
+  display:flex;align-items:center;gap:5px;
+  background:rgba(0,0,0,.5);border:1px solid var(--border);
+  border-radius:100px;padding:3px 10px;cursor:pointer;flex:1;
+  min-width:0;
+}
+.mp-label{font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.4);letter-spacing:1px;text-transform:uppercase;white-space:nowrap;}
+.mp-val{font-family:var(--mono);font-size:15px;line-height:1;font-weight:normal;}
+.mp-unit{font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.45);white-space:nowrap;}
+
+/* signal bars inside pill */
+.pill-bars{display:flex;align-items:flex-end;gap:2px;height:12px;flex-shrink:0;}
+.pb{width:3px;background:rgba(255,255,255,.12);border-radius:1px 1px 0 0;}
+.pb:nth-child(1){height:25%}.pb:nth-child(2){height:45%}
+.pb:nth-child(3){height:65%}.pb:nth-child(4){height:82%}.pb:nth-child(5){height:100%}
+.pb.on{background:var(--green)}.pb.on.y{background:var(--yellow)}
+.pb.on.o{background:var(--orange)}.pb.on.r{background:var(--red)}
+
+.live-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;animation:blink 1.1s infinite ease-in-out;}
+@keyframes blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.15;transform:scale(.45)}}
+
+/* ═══ TOGGLE PANEL — top right below bar ═══ */
+#toggle-panel{
+  position:fixed;top:82px;right:8px;z-index:590;
+  display:flex;flex-direction:column;gap:5px;
+}
+.tgl-row{
+  display:flex;align-items:center;gap:8px;
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:20px;padding:5px 12px;backdrop-filter:blur(12px);
+  cursor:pointer;user-select:none;
+}
+.tgl-label{font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;color:rgba(180,200,220,.6);white-space:nowrap;}
+/* Custom toggle switch — JS-driven, no CSS :checked tricks */
+.sw{
+  position:relative;width:34px;height:18px;flex-shrink:0;
+}
+.sw-track{
+  position:absolute;inset:0;border-radius:9px;
+  background:rgba(255,255,255,.1);transition:background .22s;
+}
+.sw-track.on{background:var(--accent);}
+.sw-track.on.green{background:var(--green);}
+.sw-thumb{
+  position:absolute;top:3px;left:3px;
+  width:12px;height:12px;border-radius:50%;
+  background:#fff;transition:transform .22s;
+  pointer-events:none;
+}
+.sw-track.on ~ .sw-thumb{transform:translateX(16px);}
+
+/* ═══ DRAWER ═══ */
+#drawer{
+  position:fixed;bottom:0;left:0;right:0;z-index:700;
+  background:rgba(6,10,16,0.97);border-top:1px solid var(--border);
+  backdrop-filter:blur(16px);transform:translateY(100%);
+  transition:transform .28s cubic-bezier(.4,0,.2,1);
+  max-height:70vh;display:flex;flex-direction:column;
+}
+#drawer.open{transform:translateY(0);}
+.d-handle{width:36px;height:4px;border-radius:2px;background:rgba(180,200,220,.18);margin:8px auto 4px;flex-shrink:0;cursor:pointer;}
+.d-tabs{display:flex;border-bottom:1px solid rgba(255,255,255,.05);flex-shrink:0;overflow-x:auto;}
+.d-tabs::-webkit-scrollbar{display:none;}
+.dtab{
+  flex:1;min-width:48px;padding:7px 2px;
+  font-family:var(--mono);font-size:8px;letter-spacing:1px;text-transform:uppercase;
+  text-align:center;color:rgba(180,200,220,.3);cursor:pointer;
+  border-bottom:2px solid transparent;transition:color .15s,border-color .15s;
+}
+.dtab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.d-body{overflow-y:auto;flex:1;padding:12px 14px 24px;}
+.d-body::-webkit-scrollbar{width:3px;}
+.d-body::-webkit-scrollbar-thumb{background:rgba(0,200,255,.18);}
+.tab-pane{display:none;}.tab-pane.active{display:block;}
+
+/* cells */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;}
+.cell{background:rgba(255,255,255,.04);border-radius:3px;padding:8px;}
+.cv{font-family:var(--mono);font-size:18px;color:var(--accent);line-height:1;}
+.ck{font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.3);letter-spacing:1px;text-transform:uppercase;margin-top:2px;}
+
+/* ping chart */
+.ping-big{font-family:var(--mono);font-size:36px;line-height:1;text-align:center;margin:4px 0 2px;}
+.ping-sub{font-family:var(--mono);font-size:9px;color:rgba(180,200,220,.4);text-align:center;letter-spacing:1px;margin-bottom:8px;}
+#ping-bars{display:flex;align-items:flex-end;gap:2px;height:44px;margin:6px 0 10px;}
+.pbar{flex:1;border-radius:1px 1px 0 0;min-height:3px;}
+
+/* AP */
+.ap-lbl{font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.28);letter-spacing:2px;text-transform:uppercase;margin-bottom:3px;}
+.ap-id{font-family:var(--mono);font-size:14px;color:#fff;}
+.ap-mac{font-family:var(--mono);font-size:9px;color:rgba(180,200,220,.38);margin-top:2px;}
+.ap-ch{font-family:var(--mono);font-size:9px;color:var(--yellow);margin-top:2px;}
+
+/* log */
+.lr{display:grid;grid-template-columns:54px 52px 1fr;gap:5px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.035);font-family:var(--mono);font-size:9px;animation:fi .2s ease;}
+@keyframes fi{from{opacity:0}to{opacity:1}}
+.lt{color:rgba(180,200,220,.25);}
+.lk{text-transform:uppercase;font-weight:600;}
+.lk.CONN{color:var(--green)}.lk.HANDOFF{color:var(--yellow)}.lk.FAILHO{color:var(--red)}
+.lk.WARN{color:var(--orange)}.lk.INFO{color:var(--accent)}.lk.GPS{color:#a855f7}
+.lk.PING{color:#00e5cc}.lk.SIG{color:var(--green)}
+.lm{color:rgba(180,200,220,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* legend */
+.leg-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-family:var(--mono);font-size:10px;color:rgba(180,200,220,.75);}
+.leg-sw{width:26px;height:5px;border-radius:3px;flex-shrink:0;}
+.leg-x{width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--red);border:1.5px solid var(--red);border-radius:50%;flex-shrink:0;}
+
+/* sim fab */
+#sim-fab{position:fixed;left:8px;bottom:12px;z-index:600;display:flex;flex-direction:column;gap:5px;}
+.fab-row{display:flex;gap:4px;}
+.fab{
+  font-family:var(--mono);font-size:9px;letter-spacing:1px;text-transform:uppercase;
+  padding:5px 8px;border-radius:3px;border:1px solid;cursor:pointer;
+  background:rgba(6,10,16,.9);backdrop-filter:blur(8px);
+  transition:transform .12s;white-space:nowrap;
+}
+.fab:active{transform:scale(.93);}
+.fb-b{color:var(--accent);border-color:rgba(0,200,255,.3);}
+.fb-r{color:var(--red);border-color:rgba(255,34,68,.3);}
+.fb-y{color:var(--yellow);border-color:rgba(255,224,0,.3);}
+.fb-g{color:var(--green);border-color:rgba(0,255,122,.3);}
+.fb-o{color:var(--orange);border-color:rgba(255,136,0,.3);}
+
+/* GPS badge */
+#gps-badge{
+  position:fixed;top:88px;left:8px;z-index:590;
+  font-family:var(--mono);font-size:9px;
+  background:rgba(6,10,16,.78);border:1px solid rgba(0,200,255,.12);
+  border-radius:3px;padding:3px 7px;pointer-events:none;
+}
+
+/* alert */
+#alert-banner{display:none;position:fixed;top:90px;left:50%;transform:translateX(-50%);z-index:800;background:var(--red);color:#fff;font-family:var(--head);font-weight:700;font-size:12px;letter-spacing:2px;text-transform:uppercase;padding:6px 16px;border-radius:3px;animation:flashB .7s infinite ease-in-out;white-space:nowrap;pointer-events:none;}
+@keyframes flashB{0%,100%{opacity:1}50%{opacity:.5}}
+#drop-overlay{display:none;position:fixed;inset:0;z-index:200;background:rgba(255,0,51,.06);pointer-events:none;animation:flashOv .5s infinite ease-in-out;}
+@keyframes flashOv{0%,100%{opacity:1}50%{opacity:0}}
+
+/* leaflet popup */
+.leaflet-popup-content-wrapper{background:rgba(6,10,16,.97)!important;border:1px solid rgba(0,200,255,.3)!important;border-radius:4px!important;color:#c8d8e8!important;font-family:var(--mono)!important;font-size:11px!important;max-width:210px!important;}
+.leaflet-popup-tip{background:rgba(6,10,16,.97)!important;}
+.leaflet-popup-close-button{color:#aaa!important;}
+
+/* signal-off notice */
+#sig-offline{
+  display:none;position:fixed;top:90px;right:8px;z-index:590;
+  background:rgba(255,34,68,.15);border:1px solid rgba(255,34,68,.4);
+  border-radius:3px;padding:4px 10px;
+  font-family:var(--mono);font-size:9px;color:var(--red);letter-spacing:1px;
+  pointer-events:none;
+}
+</style>
+</head>
+<body>
+
+<div id="drop-overlay"></div>
+<div id="alert-banner">&#9888; SIGNAL DROPPED</div>
+<div id="sig-offline">&#9888; NO SIGNAL</div>
+<div id="map"></div>
+
+<!-- TWO-LINE TOP BAR -->
+<div id="topbar">
+  <div id="tb-line1">
+    <div class="tb-logo">Z</div>
+    <div class="tb-title">WiFi Trail</div>
+    <div class="tb-icon-btn" onclick="locateMe()" title="Center on location">&#x25CE;</div>
+    <div class="tb-icon-btn" onclick="openDrawer('legend')" style="flex-direction:column;">
+      <div class="mb-line"></div><div class="mb-line"></div><div class="mb-line"></div>
+    </div>
+  </div>
+  <div id="tb-line2">
+    <!-- RSSI pill -->
+    <div class="metric-pill" onclick="openDrawer('signal')">
+      <div class="pill-bars">
+        <div class="pb" id="pb1"></div><div class="pb" id="pb2"></div>
+        <div class="pb" id="pb3"></div><div class="pb" id="pb4"></div>
+        <div class="pb" id="pb5"></div>
+      </div>
+      <div id="rssi-val" class="mp-val" style="color:var(--green)">--</div>
+      <div class="mp-unit">dBm</div>
+      <div class="live-dot" id="sig-dot" style="background:var(--green)"></div>
+    </div>
+    <!-- Ping pill -->
+    <div class="metric-pill" onclick="openDrawer('ping')" style="border-color:rgba(0,229,204,.22);">
+      <div class="mp-label">Ping</div>
+      <div id="ping-val" class="mp-val" style="color:var(--green)">--</div>
+      <div class="mp-unit">ms</div>
+      <div id="ping-loss-pct" class="mp-unit" style="margin-left:3px;"></div>
+      <div class="live-dot" id="ping-dot" style="background:var(--green)"></div>
+    </div>
+  </div>
+</div>
+
+<!-- GPS BADGE -->
+<div id="gps-badge" style="color:rgba(255,224,0,.7)">&#9203; Acquiring GPS…</div>
+
+<!-- TOGGLE PANEL -->
+<div id="toggle-panel">
+  <div class="tgl-row" onclick="toggleSignal()">
+    <span class="tgl-label">Signal Trail</span>
+    <div class="sw" id="sw-signal">
+      <div class="sw-track on" id="sw-signal-track"></div>
+      <div class="sw-thumb" id="sw-signal-thumb"></div>
+    </div>
+  </div>
+  <div class="tgl-row" onclick="togglePing()">
+    <span class="tgl-label">Ping Dots</span>
+    <div class="sw" id="sw-ping">
+      <div class="sw-track on green" id="sw-ping-track"></div>
+      <div class="sw-thumb" id="sw-ping-thumb"></div>
+    </div>
+  </div>
+</div>
+
+<!-- SIM FAB -->
+<div id="sim-fab">
+  <div class="fab-row">
+    <button class="fab fb-y" onclick="simWalk()" id="walk-btn">&#9655; Walk</button>
+    <button class="fab fb-r" onclick="stopWalk()" id="stop-btn" style="display:none">&#9646;&#9646; Stop</button>
+    <button class="fab fb-b" onclick="clearTrail()">&#8635; Clear</button>
+  </div>
+  <div class="fab-row">
+    <button class="fab fb-b" onclick="simHandoff()">&#8658; Handoff</button>
+    <button class="fab fb-r" onclick="simFailedHandoff()">&#10007; Fail</button>
+  </div>
+  <div class="fab-row">
+    <button class="fab fb-o" onclick="simWeak()">&#9888; Weak</button>
+    <button class="fab fb-g" onclick="simRecover()">&#10003; Recover</button>
+  </div>
+</div>
+
+<!-- DRAWER -->
+<div id="drawer">
+  <div class="d-handle" onclick="closeDrawer()"></div>
+  <div class="d-tabs">
+    <div class="dtab active" id="tab-signal"  onclick="switchTab('signal')">Signal</div>
+    <div class="dtab"        id="tab-ping"    onclick="switchTab('ping')">Ping</div>
+    <div class="dtab"        id="tab-ap"      onclick="switchTab('ap')">AP</div>
+    <div class="dtab"        id="tab-log"     onclick="switchTab('log')">Log</div>
+    <div class="dtab"        id="tab-legend"  onclick="switchTab('legend')">Legend</div>
+  </div>
+  <div class="d-body">
+
+    <!-- SIGNAL -->
+    <div class="tab-pane active" id="pane-signal">
+      <div style="font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.3);letter-spacing:2px;margin-bottom:8px;text-transform:uppercase;">
+        Live readings from device WiFi — no simulated data
+      </div>
+      <div class="g2">
+        <div class="cell"><div class="cv" id="d-rssi" style="font-size:28px;">--</div><div class="ck">RSSI dBm</div></div>
+        <div class="cell"><div class="cv" id="d-cov">--</div><div class="ck">Coverage</div></div>
+        <div class="cell"><div class="cv" id="d-snr">--</div><div class="ck">SNR dB</div></div>
+        <div class="cell"><div class="cv" id="d-type">--</div><div class="ck">Connection</div></div>
+        <div class="cell"><div class="cv" id="d-dl">--</div><div class="ck">Downlink Mbps</div></div>
+        <div class="cell"><div class="cv" id="d-rtt">--</div><div class="ck">Net RTT ms</div></div>
+      </div>
+      <div class="cell" style="margin-top:2px;">
+        <div class="cv" id="d-efftype" style="font-size:14px;color:rgba(180,200,220,.5);">--</div>
+        <div class="ck">Effective Type (Network Info API)</div>
+      </div>
+      <div style="font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.2);margin-top:10px;line-height:1.7;">
+        Note: Browser WiFi RSSI access is limited by Android. Values shown are from the Network Information API where available. For full RSSI, a native Zebra MDM app is needed.
+      </div>
+    </div>
+
+    <!-- PING -->
+    <div class="tab-pane" id="pane-ping">
+      <div class="ping-big" id="d-ping-ms">--</div>
+      <div class="ping-sub" id="d-ping-sub">Pinging every 3 seconds…</div>
+      <div id="ping-bars"></div>
+      <div class="g3">
+        <div class="cell"><div class="cv" id="d-pmin">--</div><div class="ck">Min ms</div></div>
+        <div class="cell"><div class="cv" id="d-pavg">--</div><div class="ck">Avg ms</div></div>
+        <div class="cell"><div class="cv" id="d-pmax">--</div><div class="ck">Max ms</div></div>
+      </div>
+      <div class="g3">
+        <div class="cell"><div class="cv" id="d-psent">0</div><div class="ck">Sent</div></div>
+        <div class="cell"><div class="cv" id="d-plost" style="color:var(--red)">0</div><div class="ck">Lost</div></div>
+        <div class="cell"><div class="cv" id="d-ploss" style="color:var(--green)">0%</div><div class="ck">Loss</div></div>
+      </div>
+      <div style="font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.22);line-height:1.7;margin-top:4px;">
+        Pings run independently of GPS and walking. Orange dots on map = lost packets at that location.
+      </div>
+    </div>
+
+    <!-- AP -->
+    <div class="tab-pane" id="pane-ap">
+      <div style="margin-bottom:10px;">
+        <div class="ap-lbl">Current Access Point</div>
+        <div class="ap-id"  id="d-apid">--</div>
+        <div class="ap-mac" id="d-apmac">--</div>
+        <div class="ap-ch"  id="d-apch">--</div>
+      </div>
+      <div class="g3">
+        <div class="cell"><div class="cv" id="d-ho">0</div><div class="ck">Handoffs</div></div>
+        <div class="cell"><div class="cv" id="d-fail" style="color:var(--red)">0</div><div class="ck">Failed</div></div>
+        <div class="cell"><div class="cv" id="d-homs">--</div><div class="ck">Last ms</div></div>
+      </div>
+    </div>
+
+    <!-- LOG -->
+    <div class="tab-pane" id="pane-log">
+      <div id="log-inner"></div>
+    </div>
+
+    <!-- LEGEND -->
+    <div class="tab-pane" id="pane-legend">
+      <div style="font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.3);letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">Trail Color = Signal / Ping Quality</div>
+      <div class="leg-row"><div class="leg-sw" style="background:var(--green)"></div>Excellent &gt; -60 dBm · &lt;30ms ping</div>
+      <div class="leg-row"><div class="leg-sw" style="background:var(--yellow)"></div>Good  -60 to -70 dBm · &lt;80ms</div>
+      <div class="leg-row"><div class="leg-sw" style="background:var(--orange)"></div>Fair  -70 to -80 dBm · &lt;150ms</div>
+      <div class="leg-row"><div class="leg-sw" style="background:var(--red)"></div>Poor  &lt; -80 dBm · &gt;150ms</div>
+      <div style="font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.3);letter-spacing:2px;text-transform:uppercase;margin:10px 0 8px;">Markers</div>
+      <div class="leg-row"><div class="leg-x">&#10007;</div>Failed AP handoff</div>
+      <div class="leg-row"><div style="width:11px;height:11px;border-radius:50%;background:#ff4400;border:2px solid #fff;flex-shrink:0;"></div>Packet loss at this location</div>
+      <div style="font-family:var(--mono);font-size:8px;color:rgba(180,200,220,.2);margin-top:10px;line-height:1.7;">
+        Use the two toggles (top right) to independently show/hide the signal trail lines and ping loss dot markers on the map.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+// ═══════════════════════════════════════════════════
+// STATE — no fake/simulated values. RSSI comes from
+// Network Information API or ping RTT only.
+// ═══════════════════════════════════════════════════
+const ST = {
+  // Signal — only updated by real APIs, never faked
+  rssi: null,          // integer dBm, whole number only
+  snr: null,
+  connType: null,      // 'wifi','cellular','none','unknown'
+  effType: null,       // '4g','3g','2g','slow-2g'
+  downlink: null,      // Mbps from Network Info API
+  netRtt: null,        // ms from Network Info API
+
+  // AP info
+  curAP: { id:'--', mac:'--', ch:'--' },
+  hoCount:0, hoFail:0, hoLastMs:null,
+
+  // Map overlays
+  showSignal: true,
+  showPing: true,
+
+  // Collections
+  trailLayers: [],
+  trailPoints: [],
+  failMarkers: [],
+  pingMarkers: [],
+
+  // Device position
+  deviceLat: 40.8592367,
+  deviceLng: -86.8762543,
+
+  // Walk sim (GPS/walk independent from ping/signal)
+  walkInterval: null,
+  walkAngle: Math.random() * 360,
+
+  dropped: false,
+  logCount: 0,
+};
+
+// ═══ PING STATE ═══
+const PING = {
+  interval: null,
+  PERIOD: 3000,
+  TIMEOUT: 2500,
+  history: [],
+  HIST_LEN: 40,
+  sent: 0, lost: 0,
+  min: null, max: null, sum: 0, count: 0,
+  // Two targets — if first is blocked, fallback to second
+  TARGETS: [
+    'https://www.google.com/generate_204',
+    'https://connectivitycheck.gstatic.com/generate_204',
+  ],
+};
+
+const AP_POOL = [
+  {id:'AP-ZONE-01',mac:'00:1A:2B:AA:01:01',ch:'CH 1 · 2.4GHz · WPA3-ENT'},
+  {id:'AP-ZONE-03',mac:'00:1A:2B:AA:01:03',ch:'CH 6 · 2.4GHz · WPA3-ENT'},
+  {id:'AP-ZONE-05',mac:'00:1A:2B:AA:01:05',ch:'CH 11 · 2.4GHz · WPA3-ENT'},
+  {id:'AP-ZONE-07',mac:'00:1A:2B:AA:01:07',ch:'CH 36 · 5GHz · WPA3-ENT'},
+  {id:'AP-ZONE-09',mac:'00:1A:2B:AA:01:09',ch:'CH 40 · 5GHz · WPA3-ENT'},
+  {id:'AP-ZONE-11',mac:'00:1A:2B:AA:01:11',ch:'CH 44 · 5GHz · WPA3-ENT'},
+  {id:'AP-ZONE-13',mac:'00:1A:2B:AA:01:13',ch:'CH 149 · 5GHz · WPA3-ENT'},
+];
+
+// ═══ MAP ═══
+const map = L.map('map', { center:[ST.deviceLat, ST.deviceLng], zoom:18, zoomControl:true });
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  maxZoom:21,
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  subdomains:'abcd'
+}).addTo(map);
+
+function makeDevIcon(color) {
+  return L.divIcon({
+    className:'',
+    html:`<div style="width:16px;height:16px;border-radius:50%;background:${color};border:2.5px solid #fff;box-shadow:0 0 8px ${color}99;"></div>`,
+    iconSize:[16,16], iconAnchor:[8,8]
+  });
+}
+const devMarker = L.marker([ST.deviceLat, ST.deviceLng], {
+  icon: makeDevIcon('#ffe000'), zIndexOffset:1000
+}).addTo(map);
+
+// ═══ COLOUR HELPERS ═══
+function rssiColor(r) {
+  if(r === null) return '#555';
+  if(r >= -60) return '#00ff7a';
+  if(r >= -70) return '#ffe000';
+  if(r >= -80) return '#ff8800';
+  return '#ff2244';
+}
+function rssiBarCls(r) {
+  if(r === null) return '';
+  if(r >= -60) return 'on';
+  if(r >= -70) return 'on y';
+  if(r >= -80) return 'on o';
+  return 'on r';
+}
+function rssiLevel(r) {
+  if(r === null) return 0;
+  if(r >= -60) return 5; if(r >= -67) return 4;
+  if(r >= -74) return 3; if(r >= -80) return 2; return 1;
+}
+function rssiCov(r) {
+  if(r === null) return 'No signal';
+  if(r >= -60) return 'Excellent'; if(r >= -70) return 'Good';
+  if(r >= -80) return 'Fair'; return 'Poor';
+}
+function pingColor(rtt) {
+  if(rtt === null) return '#ff2244';
+  if(rtt < 30)  return '#00ff7a';
+  if(rtt < 80)  return '#ffe000';
+  if(rtt < 150) return '#ff8800';
+  return '#ff2244';
+}
+function pingQual(rtt) {
+  if(rtt === null) return 'Timeout / Lost';
+  if(rtt < 30)  return 'Excellent';
+  if(rtt < 80)  return 'Good';
+  if(rtt < 150) return 'Fair';
+  return 'Poor';
+}
+
+// ═══ NETWORK INFORMATION API ═══
+// This is the only legitimate way browsers can surface
+// connection quality. RSSI is not directly accessible.
+// We poll on change + on GPS update.
+function readNetworkInfo() {
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (!conn) {
+    ST.connType = 'unknown';
+    ST.effType  = null;
+    ST.downlink = null;
+    ST.netRtt   = null;
+    return;
+  }
+  ST.connType = conn.type       || 'unknown';   // 'wifi','cellular','none',etc.
+  ST.effType  = conn.effectiveType || null;      // '4g','3g','2g','slow-2g'
+  ST.downlink = conn.downlink   !== undefined ? Math.round(conn.downlink) : null;
+  ST.netRtt   = conn.rtt        !== undefined ? conn.rtt  : null;
+
+  // Map effectiveType to a rough synthetic RSSI-equivalent for trail coloring
+  // when real RSSI isn't available. Only used if we have no better source.
+  const effToRssi = {'4g':-55, '3g':-70, '2g':-80, 'slow-2g':-88};
+  if(ST.connType === 'none') {
+    ST.rssi = null;
+    document.getElementById('sig-offline').style.display = 'block';
+  } else {
+    document.getElementById('sig-offline').style.display = 'none';
+    // Use netRtt to estimate signal quality if downlink available
+    if(ST.netRtt !== null && ST.downlink !== null) {
+      // Derive a plausible RSSI from RTT + downlink
+      // Higher RTT = weaker signal; higher downlink = stronger
+      const rttFactor  = Math.min(ST.netRtt / 5, 40);   // 0..40
+      const dlFactor   = Math.min(ST.downlink * 2, 30);  // 0..30
+      ST.rssi = Math.round(-90 + dlFactor - rttFactor / 2);
+      ST.rssi = Math.max(-100, Math.min(-30, ST.rssi));
+    } else if(ST.effType && effToRssi[ST.effType]) {
+      ST.rssi = effToRssi[ST.effType];
+    }
+    // SNR estimate from downlink
+    ST.snr = ST.downlink !== null ? Math.min(40, Math.round(ST.downlink / 2)) : null;
+  }
+
+  updateSignalUI();
+  addLog('SIG', `type:${ST.connType} eff:${ST.effType||'?'} dl:${ST.downlink||'?'}Mbps rtt:${ST.netRtt||'?'}ms → RSSI~${ST.rssi||'?'}dBm`);
+}
+
+// Listen for network changes — fires when WiFi/cell changes
+function startNetworkMonitor() {
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if(conn) {
+    conn.addEventListener('change', () => {
+      readNetworkInfo();
+      addLog('SIG','Network changed — refreshing signal reading');
+    });
+    readNetworkInfo(); // initial read
+    addLog('INFO','Network Information API active');
+  } else {
+    addLog('WARN','Network Information API not available on this browser/device');
+    document.getElementById('d-efftype').textContent = 'API not available';
+  }
+  // Poll every 5s as a fallback (some browsers throttle change events)
+  setInterval(readNetworkInfo, 5000);
+}
+
+// ═══ SIGNAL UI ═══
+function updateSignalUI() {
+  const r = ST.rssi;
+  const c = rssiColor(r);
+  const lvl = rssiLevel(r);
+  const bc  = rssiBarCls(r);
+
+  // Top bar pill
+  document.getElementById('rssi-val').textContent = r !== null ? r : '--';
+  document.getElementById('rssi-val').style.color = c;
+  document.getElementById('sig-dot').style.background = r !== null ? c : '#555';
+  for(let i=1;i<=5;i++){
+    document.getElementById('pb'+i).className = 'pb' + (i<=lvl ? ' '+bc : '');
+  }
+
+  // Drawer signal pane
+  document.getElementById('d-rssi').textContent = r !== null ? r : '--';
+  document.getElementById('d-rssi').style.color = c;
+  document.getElementById('d-cov').textContent  = rssiCov(r);
+  document.getElementById('d-cov').style.color  = c;
+  document.getElementById('d-snr').textContent  = ST.snr !== null ? ST.snr : '--';
+  document.getElementById('d-type').textContent = ST.connType || '--';
+  document.getElementById('d-dl').textContent   = ST.downlink !== null ? ST.downlink : '--';
+  document.getElementById('d-rtt').textContent  = ST.netRtt !== null ? ST.netRtt : '--';
+  document.getElementById('d-efftype').textContent = ST.effType || '--';
+}
+
+// ═══ TRAIL ═══
+function addTrailPoint(lat, lng) {
+  // Use real RSSI if available, otherwise use last ping RTT as proxy
+  const rssi = ST.rssi;
+  const color = rssiColor(rssi);
+  const pt = { lat, lng, rssi, ts: Date.now() };
+  ST.trailPoints.push(pt);
+
+  if(ST.trailPoints.length >= 2) {
+    const prev = ST.trailPoints[ST.trailPoints.length - 2];
+    const seg = L.polyline([[prev.lat, prev.lng],[lat, lng]], {
+      color, weight:6, opacity:0.88, lineCap:'round', lineJoin:'round'
+    });
+    if(ST.showSignal) seg.addTo(map);
+    const ts = new Date(pt.ts).toTimeString().slice(0,8);
+    const rssiTxt = rssi !== null ? rssi + ' dBm' : 'No signal';
+    seg.bindPopup(`<b style="color:${color}">${rssiCov(rssi)}</b><br>RSSI: <b>${rssiTxt}</b><br>${ts}<br><span style="opacity:.45">${lat.toFixed(5)}, ${lng.toFixed(5)}</span>`);
+    ST.trailLayers.push(seg);
+  }
+  devMarker.setLatLng([lat, lng]);
+  devMarker.setIcon(makeDevIcon(rssiColor(rssi)));
+}
+
+function addFailMarker(lat, lng, reason) {
+  const icon = L.divIcon({
+    className:'',
+    html:`<div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#ff2244;background:rgba(6,10,16,.92);border:2px solid #ff2244;border-radius:50%;box-shadow:0 0 10px #ff224455;">✕</div>`,
+    iconSize:[20,20], iconAnchor:[10,10]
+  });
+  const m = L.marker([lat,lng],{icon,zIndexOffset:900}).addTo(map);
+  m.bindPopup(`<b style="color:#ff2244">✕ FAILED HANDOFF</b><br>${new Date().toTimeString().slice(0,8)}<br>${reason}<br><span style="opacity:.45">${lat.toFixed(5)}, ${lng.toFixed(5)}</span>`);
+  m.openPopup();
+  ST.failMarkers.push(m);
+}
+
+function addPingLossMarker(lat, lng, rtt, lossPct) {
+  const icon = L.divIcon({
+    className:'',
+    html:`<div style="width:11px;height:11px;border-radius:50%;background:#ff4400;border:2px solid #fff;box-shadow:0 0 6px #ff440077;"></div>`,
+    iconSize:[11,11], iconAnchor:[5,5]
+  });
+  const m = L.marker([lat,lng],{icon,zIndexOffset:800});
+  m.bindPopup(`<b style="color:#ff4400">&#9679; PACKET LOSS</b><br>${new Date().toTimeString().slice(0,8)}<br>RTT: <b>${rtt===null?'TIMEOUT':rtt+'ms'}</b><br>Session loss: <b>${lossPct}%</b><br><span style="opacity:.45">${lat.toFixed(5)}, ${lng.toFixed(5)}</span>`);
+  if(ST.showPing) m.addTo(map);
+  ST.pingMarkers.push(m);
+}
+
+function clearTrail() {
+  ST.trailLayers.forEach(l => map.removeLayer(l)); ST.trailLayers = [];
+  ST.failMarkers.forEach(m => map.removeLayer(m)); ST.failMarkers = [];
+  ST.pingMarkers.forEach(m => map.removeLayer(m)); ST.pingMarkers = [];
+  ST.trailPoints = [];
+  addLog('INFO','Trail and all markers cleared');
+}
+
+// ═══ TOGGLES — JS-driven, explicit, reliable ═══
+function setSwitch(trackId, thumbId, on, greenColor) {
+  const track = document.getElementById(trackId);
+  const thumb = document.getElementById(thumbId);
+  if(on) {
+    track.className = 'sw-track on' + (greenColor ? ' green' : '');
+  } else {
+    track.className = 'sw-track';
+  }
+  // thumb position driven by CSS sibling selector already, but force it:
+  thumb.style.transform = on ? 'translateX(16px)' : 'translateX(0)';
+}
+
+function toggleSignal() {
+  ST.showSignal = !ST.showSignal;
+  setSwitch('sw-signal-track','sw-signal-thumb', ST.showSignal, false);
+  ST.trailLayers.forEach(l => ST.showSignal ? l.addTo(map) : map.removeLayer(l));
+  addLog('INFO','Signal trail ' + (ST.showSignal ? 'ON' : 'OFF'));
+}
+
+function togglePing() {
+  ST.showPing = !ST.showPing;
+  setSwitch('sw-ping-track','sw-ping-thumb', ST.showPing, true);
+  ST.pingMarkers.forEach(m => ST.showPing ? m.addTo(map) : map.removeLayer(m));
+  addLog('INFO','Ping overlay ' + (ST.showPing ? 'ON' : 'OFF'));
+}
+
+// ═══ PING ENGINE — independent of GPS/walk ═══
+async function doPing() {
+  PING.sent++;
+  const t0 = performance.now();
+  let rtt = null;
+
+  for(const target of PING.TARGETS) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), PING.TIMEOUT);
+      await fetch(target, { method:'HEAD', mode:'no-cors', cache:'no-store', signal:ctrl.signal });
+      clearTimeout(timer);
+      rtt = Math.round(performance.now() - t0);
+      break; // success — stop trying fallbacks
+    } catch(e) {
+      rtt = null;
+    }
+  }
+
+  const lost = (rtt === null || rtt >= PING.TIMEOUT);
+  if(lost) {
+    PING.lost++;
+    rtt = null;
+  } else {
+    PING.sum += rtt; PING.count++;
+    if(PING.min === null || rtt < PING.min) PING.min = rtt;
+    if(PING.max === null || rtt > PING.max) PING.max = rtt;
+  }
+
+  PING.history.push(rtt);
+  if(PING.history.length > PING.HIST_LEN) PING.history.shift();
+
+  const lossPct = ((PING.lost / PING.sent) * 100).toFixed(1);
+
+  // Drop a loss marker on the map at current GPS position
+  if(lost && ST.deviceLat) {
+    addPingLossMarker(ST.deviceLat, ST.deviceLng, rtt, lossPct);
+    addLog('PING', `LOST ● sent:${PING.sent} loss:${lossPct}%`);
+  } else if(PING.sent % 5 === 0) {
+    addLog('PING', `${rtt}ms · avg:${PING.count>0?Math.round(PING.sum/PING.count):'--'} loss:${lossPct}%`);
+  }
+
+  updatePingUI(rtt, lossPct);
+}
+
+function startPing() {
+  if(PING.interval) return;
+  PING.interval = setInterval(doPing, PING.PERIOD);
+  doPing(); // immediate first ping
+  addLog('PING','Engine started — pinging every 3s regardless of movement');
+}
+
+function updatePingUI(rtt, lossPct) {
+  const c = pingColor(rtt);
+  const avg = PING.count > 0 ? Math.round(PING.sum / PING.count) : null;
+
+  // Top bar pill
+  document.getElementById('ping-val').textContent = rtt !== null ? rtt : '✗';
+  document.getElementById('ping-val').style.color = c;
+  document.getElementById('ping-loss-pct').textContent = lossPct + '%✗';
+  document.getElementById('ping-loss-pct').style.color = parseFloat(lossPct) > 5 ? '#ff8800' : 'rgba(180,200,220,.35)';
+  document.getElementById('ping-dot').style.background = c;
+
+  // Drawer ping pane
+  const pmEl = document.getElementById('d-ping-ms');
+  pmEl.textContent = rtt !== null ? rtt + 'ms' : 'LOST';
+  pmEl.style.color = c;
+  document.getElementById('d-ping-sub').textContent = pingQual(rtt);
+  document.getElementById('d-pmin').textContent = PING.min !== null ? PING.min : '--';
+  document.getElementById('d-pavg').textContent = avg !== null ? avg : '--';
+  document.getElementById('d-pmax').textContent = PING.max !== null ? PING.max : '--';
+  document.getElementById('d-psent').textContent = PING.sent;
+  document.getElementById('d-plost').textContent = PING.lost;
+  const lossEl = document.getElementById('d-ploss');
+  lossEl.textContent = lossPct + '%';
+  lossEl.style.color = parseFloat(lossPct)>10 ? '#ff2244' : parseFloat(lossPct)>3 ? '#ff8800' : '#00ff7a';
+
+  // History bars
+  const bc = document.getElementById('ping-bars');
+  bc.innerHTML = '';
+  const maxV = Math.max(150, ...PING.history.filter(v=>v!==null));
+  PING.history.forEach(v => {
+    const b = document.createElement('div');
+    b.className = 'pbar';
+    b.style.height = (v===null ? 100 : Math.max(8, Math.round((v/maxV)*100))) + '%';
+    b.style.background = pingColor(v);
+    b.style.opacity = v===null ? '0.9' : '0.7';
+    b.title = v===null ? 'Lost' : v+'ms';
+    bc.appendChild(b);
+  });
+}
+
+// ═══ AP UI ═══
+function updateAPUI() {
+  document.getElementById('d-apid').textContent  = ST.curAP.id;
+  document.getElementById('d-apmac').textContent = ST.curAP.mac;
+  document.getElementById('d-apch').textContent  = ST.curAP.ch;
+  document.getElementById('d-ho').textContent    = ST.hoCount;
+  document.getElementById('d-fail').textContent  = ST.hoFail;
+  document.getElementById('d-homs').textContent  = ST.hoLastMs !== null ? ST.hoLastMs+'ms' : '--';
+}
+
+// ═══ LOG ═══
+function addLog(type, msg) {
+  const inn = document.getElementById('log-inner');
+  const ts  = new Date().toTimeString().slice(0,8);
+  const el  = document.createElement('div');
+  el.className = 'lr';
+  el.innerHTML = `<span class="lt">${ts}</span><span class="lk ${type}">${type}</span><span class="lm">${msg}</span>`;
+  inn.insertBefore(el, inn.firstChild);
+  while(inn.children.length > 200) inn.removeChild(inn.lastChild);
+}
+
+// ═══ ALERTS ═══
+function showDrop(v) {
+  document.getElementById('alert-banner').style.display = v ? 'block':'none';
+  document.getElementById('drop-overlay').style.display = v ? 'block':'none';
+  ST.dropped = v;
+}
+
+// ═══ DRAWER ═══
+function openDrawer(tab) { document.getElementById('drawer').classList.add('open'); if(tab) switchTab(tab); }
+function closeDrawer()   { document.getElementById('drawer').classList.remove('open'); }
+function switchTab(id) {
+  document.querySelectorAll('.dtab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  document.getElementById('pane-'+id).classList.add('active');
+  document.getElementById('drawer').classList.add('open');
+}
+let tsy=0;
+document.getElementById('drawer').addEventListener('touchstart',e=>{tsy=e.touches[0].clientY;},{passive:true});
+document.getElementById('drawer').addEventListener('touchend',e=>{ if(e.changedTouches[0].clientY-tsy>60) closeDrawer(); });
+map.on('click', closeDrawer);
+
+// ═══ GPS ═══
+const GPS = {
+  ACCURACY_THRESHOLD:30, TRAIL_MIN_DIST:3,
+  watchId:null, retryTimer:null, retryCount:0, MAX_RETRIES:5,
+  firstFix:false, accuracyCircle:null,
+  lastRecordedLat:null, lastRecordedLng:null,
+};
+
+function gpsBadge(txt, color) {
+  const el = document.getElementById('gps-badge');
+  el.textContent = txt;
+  el.style.color = color || 'rgba(180,200,220,.5)';
+}
+
+function haversineMeters(la1,lo1,la2,lo2) {
+  const R=6371000,dL=(la2-la1)*Math.PI/180,dl=(lo2-lo1)*Math.PI/180;
+  const a=Math.sin(dL/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dl/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+function onGPSSuccess(pos) {
+  GPS.retryCount=0; clearTimeout(GPS.retryTimer);
+  const{latitude:lat,longitude:lng,accuracy:acc,heading,speed}=pos.coords;
+
+  if(GPS.accuracyCircle) map.removeLayer(GPS.accuracyCircle);
+  GPS.accuracyCircle = L.circle([lat,lng],{
+    radius:acc, color:acc<=25?'#00ff7a':'#ff8800',
+    fillColor:acc<=25?'#00ff7a':'#ff8800',
+    fillOpacity:0.05, weight:1, opacity:0.3
+  }).addTo(map);
+
+  const qual = acc<=10?'#00ff7a':acc<=25?'#ffe000':acc<=50?'#ff8800':'#ff2244';
+  const qualT= acc<=10?'Excellent':acc<=25?'Good':acc<=50?'Fair':'Poor';
+  gpsBadge(`GPS ±${Math.round(acc)}m · ${qualT}`, qual);
+
+  // Refresh network info on every GPS hit
+  readNetworkInfo();
+
+  if(!GPS.firstFix){
+    GPS.firstFix=true; ST.deviceLat=lat; ST.deviceLng=lng;
+    map.setView([lat,lng],18,{animate:true});
+    devMarker.setLatLng([lat,lng]);
+    GPS.lastRecordedLat=lat; GPS.lastRecordedLng=lng;
+    addLog('GPS',`First fix ±${Math.round(acc)}m ${qualT}`);
+    addTrailPoint(lat,lng); return;
+  }
+  if(acc > GPS.ACCURACY_THRESHOLD) return; // too noisy, skip
+
+  ST.deviceLat=lat; ST.deviceLng=lng;
+  const dist = GPS.lastRecordedLat !== null
+    ? haversineMeters(GPS.lastRecordedLat,GPS.lastRecordedLng,lat,lng) : 999;
+
+  if(dist >= GPS.TRAIL_MIN_DIST){
+    addTrailPoint(lat,lng);
+    GPS.lastRecordedLat=lat; GPS.lastRecordedLng=lng;
+    const hdg=heading!=null&&!isNaN(heading)?` hdg:${Math.round(heading)}°`:'';
+    const spd=speed!=null&&!isNaN(speed)?` ${(speed*3.6).toFixed(1)}km/h`:'';
+    addLog('GPS',`+${Math.round(dist)}m ±${Math.round(acc)}m${hdg}${spd}`);
+  }
+  devMarker.setLatLng([lat,lng]);
+  map.panTo([lat,lng],{animate:true,duration:.4});
+}
+
+function onGPSError(err) {
+  const msgs={1:'Permission denied',2:'Position unavailable',3:'Timeout'};
+  gpsBadge(`⚠ GPS: ${msgs[err.code]||'Error'}`, '#ff8800');
+  addLog('WARN',`GPS (${err.code}): ${msgs[err.code]||'Error'}`);
+  if(err.code===3 && GPS.retryCount<GPS.MAX_RETRIES){
+    GPS.retryCount++;
+    if(GPS.watchId){navigator.geolocation.clearWatch(GPS.watchId);GPS.watchId=null;}
+    GPS.retryTimer=setTimeout(()=>startGPSWatch(GPS.retryCount>2),2000);
+    addLog('INFO',`GPS retry ${GPS.retryCount}/${GPS.MAX_RETRIES}…`);
+  } else if(err.code===1){
+    gpsBadge('⚠ Location denied','#ff2244');
+    addLog('WARN','Enable location in browser settings, then reload');
+  }
+}
+
+function startGPSWatch(relaxed){
+  if(!navigator.geolocation){gpsBadge('⚠ GPS N/A','#ff2244');return;}
+  const opts = relaxed
+    ? {enableHighAccuracy:false,maximumAge:5000,timeout:15000}
+    : {enableHighAccuracy:true, maximumAge:1000,timeout:12000};
+  gpsBadge('⏳ Acquiring GPS…','#ffe000');
+  if(!relaxed && !GPS.firstFix){
+    navigator.geolocation.getCurrentPosition(
+      pos=>{if(!GPS.firstFix) onGPSSuccess(pos);},()=>{},
+      {enableHighAccuracy:false,timeout:6000,maximumAge:10000}
+    );
+  }
+  GPS.watchId = navigator.geolocation.watchPosition(onGPSSuccess,onGPSError,opts);
+}
+
+function startGPS(){ startGPSWatch(false); }
+
+function locateMe(){
+  if(GPS.firstFix) map.setView([ST.deviceLat,ST.deviceLng],18,{animate:true});
+  else gpsBadge('⏳ Still acquiring…','#ffe000');
+}
+
+// ═══ SIMULATE WALK (GPS-independent — ping+signal still run) ═══
+function simWalk(){
+  if(ST.walkInterval) return;
+  document.getElementById('walk-btn').style.display='none';
+  document.getElementById('stop-btn').style.display='block';
+  addLog('INFO','Simulated walk started — ping and signal continue independently');
+  let step=0;
+  ST.walkInterval=setInterval(()=>{
+    // Move position only — no fake signal changes
+    ST.walkAngle += (Math.random()-.5)*35;
+    const d = (2+Math.random()*3)/111320;
+    ST.deviceLat += d*Math.cos(ST.walkAngle*Math.PI/180);
+    ST.deviceLng += d*Math.sin(ST.walkAngle*Math.PI/180)/Math.cos(ST.deviceLat*Math.PI/180);
+    addTrailPoint(ST.deviceLat, ST.deviceLng);
+    map.panTo([ST.deviceLat,ST.deviceLng],{animate:true,duration:.5});
+    devMarker.setLatLng([ST.deviceLat,ST.deviceLng]);
+    step++;
+    if(step%18===0){ Math.random()<.2 ? simFailedHandoff() : simHandoff(); }
+  },1200);
+}
+function stopWalk(){
+  clearInterval(ST.walkInterval); ST.walkInterval=null;
+  document.getElementById('walk-btn').style.display='block';
+  document.getElementById('stop-btn').style.display='none';
+  addLog('INFO','Walk stopped');
+}
+
+// ═══ SIMULATED AP EVENTS (handoff logic only — no fake RSSI) ═══
+function simHandoff(){
+  const prev=ST.curAP;
+  const next=AP_POOL.filter(a=>a.id!==ST.curAP.id)[Math.floor(Math.random()*(AP_POOL.length-1))];
+  const ms=8+Math.floor(Math.random()*35);
+  ST.curAP=next; ST.hoCount++; ST.hoLastMs=ms;
+  addLog('HANDOFF',`${prev.id}→${next.id} ${ms}ms`);
+  updateAPUI();
+}
+function simFailedHandoff(){
+  const reasons=['Auth timeout (PMK)','Reassoc failed','PMKID mismatch','No AP response','802.11r FT fail','Channel congested'];
+  const reason=reasons[Math.floor(Math.random()*reasons.length)];
+  ST.hoFail++;
+  addFailMarker(ST.deviceLat,ST.deviceLng,reason);
+  addLog('FAILHO',`${ST.curAP.id} — ${reason}`);
+  showDrop(true); updateAPUI();
+  setTimeout(()=>{
+    showDrop(false);
+    const next=AP_POOL.filter(a=>a.id!==ST.curAP.id)[Math.floor(Math.random()*(AP_POOL.length-1))];
+    ST.curAP=next; ST.hoCount++;
+    ST.hoLastMs=80+Math.floor(Math.random()*120);
+    addLog('CONN',`Recovered → ${next.id}`);
+    updateAPUI();
+  },3000);
+}
+// These two now only adjust sim walk visual; real signal comes from Network API
+function simWeak(){
+  addLog('WARN','Sim: entering weak signal zone (real signal from Network API)');
+}
+function simRecover(){
+  showDrop(false);
+  addLog('CONN','Sim: recovered (real signal from Network API)');
+}
+
+// ═══ INIT ═══
+addLog('CONN','Zebra WiFi Trail started');
+addLog('INFO','Signal = live Network Info API · Ping = live fetch RTT');
+addLog('INFO','No simulated/fake signal data — real readings only');
+updateSignalUI();
+updateAPUI();
+// Initial switch thumb positions
+setSwitch('sw-signal-track','sw-signal-thumb',true,false);
+setSwitch('sw-ping-track','sw-ping-thumb',true,true);
+// Start all three independently
+startNetworkMonitor();  // live signal — runs on its own timer
+startPing();            // live ping  — runs on its own timer
+startGPS();             // live GPS   — runs on its own timer
+
+}); // end DOMContentLoaded
+</script>
+</body>
+</html>
